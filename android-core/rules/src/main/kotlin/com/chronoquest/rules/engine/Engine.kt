@@ -11,6 +11,7 @@ import com.chronoquest.rules.model.Resolution
 import com.chronoquest.rules.model.Tier
 import com.chronoquest.rules.titles.TitleCatalog
 import java.time.LocalDateTime
+import java.time.YearMonth
 
 /**
  * 판정 엔진 진입점. 원장 전체를 매번 처음부터 다시 계산한다(스펙 D9).
@@ -25,7 +26,7 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
         val outcomes = judgeAll(quests, records)
 
         val acc = Accumulator(catalog)
-        buildEvents(quests, records, days, outcomes)
+        buildEvents(quests, records, days, outcomes, ledger.seasonStart, now)
             .sortedWith(Event.ORDER)
             .forEach(acc::handle)
 
@@ -74,6 +75,8 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
         records: Map<String, QuestRecord>,
         days: List<DayRecord>,
         outcomes: Map<String, QuestOutcome>,
+        seasonStart: java.time.LocalDate,
+        now: LocalDateTime,
     ): List<Event> {
         val events = mutableListOf<Event>()
         for (q in quests) {
@@ -94,6 +97,17 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
                     .minOrNull()
                 events += Event.SelfControl(firstDeparture ?: d.date.atTime(23, 59), d.date)
             }
+        }
+        val work = quests.filter { it.kind == QuestKind.WORK }
+        val workByWeek = work.groupBy { Periods.weekStart(it.date) }
+        for (week in Periods.closedWeeks(seasonStart, now)) {
+            val verdicts = workByWeek[week].orEmpty().map { outcomes.getValue(it.id).verdict }
+            events += Event.WeekClose(week, judgePeriod(verdicts))
+        }
+        val workByMonth = work.groupBy { YearMonth.from(it.date) }
+        for (month in Periods.closedMonths(seasonStart, now)) {
+            val verdicts = workByMonth[month].orEmpty().map { outcomes.getValue(it.id).verdict }
+            events += Event.MonthClose(month, judgePeriod(verdicts))
         }
         return events
     }

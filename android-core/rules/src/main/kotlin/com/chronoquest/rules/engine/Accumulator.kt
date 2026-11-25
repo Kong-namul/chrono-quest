@@ -17,6 +17,9 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     var perfectWeekStreak: Streak = Streak()
         private set
     private val grants = mutableListOf<Grant>()
+    /** 보류된 주가 나오면 그 뒤 주들은 판정하지 않는다(스펙 5.2 보류 규칙). */
+    private var weeksBlocked = false
+    private var monthsBlocked = false
 
     fun grants(): List<Grant> = grants.toList()
 
@@ -26,6 +29,8 @@ internal class Accumulator(private val catalog: TitleCatalog) {
             is Event.Arrive -> onArrive(event)
             is Event.Wake -> onWake(event)
             is Event.SelfControl -> onSelfControl(event)
+            is Event.WeekClose -> onWeekClose(event)
+            is Event.MonthClose -> onMonthClose(event)
         }
     }
 
@@ -69,6 +74,40 @@ internal class Accumulator(private val catalog: TitleCatalog) {
         counters = counters.copy(selfControl = counters.selfControl + 1)
         addXp("$key:xp", e.at, GrantType.XP_SELF_CONTROL, XP_SELF_CONTROL)
         award(key, e.at, catalog.cumulativeAwards(Series.SELF_CONTROL_TOTAL, counters.selfControl))
+    }
+
+    private fun onWeekClose(e: Event.WeekClose) {
+        if (weeksBlocked) return
+        val key = "week:${e.weekStart}"
+        when (e.result) {
+            PeriodResult.NO_WORK, PeriodResult.CLOSE_ONLY -> Unit
+            PeriodResult.PENDING -> weeksBlocked = true
+            PeriodResult.HAS_LATE -> perfectWeekStreak = perfectWeekStreak.reset()
+            PeriodResult.PERFECT -> {
+                counters = counters.copy(perfectWeeks = counters.perfectWeeks + 1)
+                perfectWeekStreak = perfectWeekStreak.advance()
+                addXp("$key:xp", e.at, GrantType.XP_PERFECT_WEEK, XP_PERFECT_WEEK)
+                if (perfectWeekStreak.current % 3 == 0) {
+                    addXp("$key:3w", e.at, GrantType.XP_THREE_WEEKS, XP_THREE_WEEKS)
+                }
+                award(key, e.at, catalog.cumulativeAwards(Series.PERFECT_WEEK_TOTAL, counters.perfectWeeks))
+                award(key, e.at, catalog.streakAwards(Series.PERFECT_WEEK_STREAK, perfectWeekStreak.current))
+            }
+        }
+    }
+
+    private fun onMonthClose(e: Event.MonthClose) {
+        if (monthsBlocked) return
+        val key = "month:${e.month}"
+        when (e.result) {
+            PeriodResult.PENDING -> monthsBlocked = true
+            PeriodResult.PERFECT -> {
+                counters = counters.copy(perfectMonths = counters.perfectMonths + 1)
+                addXp("$key:xp", e.at, GrantType.XP_PERFECT_MONTH, XP_PERFECT_MONTH)
+                award(key, e.at, catalog.cumulativeAwards(Series.PERFECT_MONTH_TOTAL, counters.perfectMonths))
+            }
+            PeriodResult.NO_WORK, PeriodResult.CLOSE_ONLY, PeriodResult.HAS_LATE -> Unit
+        }
     }
 
     private fun addXp(key: String, at: LocalDateTime, type: GrantType, amount: Int) {

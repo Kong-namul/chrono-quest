@@ -57,5 +57,6 @@ data class GameState(
     val outcomes: Map<String, QuestOutcome>,
     val pendingQuestIds: List<String>,
     val pet: PetState,
+    val boss: BossState,
     val grants: List<Grant>,
 )

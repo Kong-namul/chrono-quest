@@ -34,7 +34,15 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
             .filter { outcomes.getValue(it.id).verdict == null && !it.dueAt.isAfter(now) }
             .sortedWith(compareBy<Quest>({ it.dueAt }, { it.id }))
             .map { it.id }
-        val grants = acc.grants()
+        val boss = Bosses.compute(
+            quests = quests,
+            outcomes = outcomes,
+            wakeDays = days.filter(Judges::wakeSuccess).map { it.date }.toSet(),
+            selfControlDays = days.filter { it.selfControl == true }.map { it.date }.toSet(),
+            seasonStart = ledger.seasonStart,
+            now = now,
+        )
+        val grants = (acc.grants() + Bosses.resultGrants(boss)).sortedBy { it.at }
         val inventory = grants.mapNotNull { it.titleId }.groupingBy { it }.eachCount().toSortedMap()
         val today = now.toLocalDate()
         val mood = PetTracker.moodFor(
@@ -53,6 +61,7 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
             outcomes = outcomes,
             pendingQuestIds = pending,
             pet = acc.pet.state(mood),
+            boss = boss,
             grants = grants,
         )
     }

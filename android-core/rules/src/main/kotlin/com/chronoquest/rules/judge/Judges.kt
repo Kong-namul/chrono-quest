@@ -18,7 +18,7 @@ object Judges {
     const val GRACE_MINUTES = 5L
     const val WAKE_LIMIT_MINUTES = 5L
 
-    /** 도착 판정. 판정할 수 없으면(도착 시각이나 안전 여부 없음) null. */
+    /** 도착 판정. NO_RECORD와 위험 이동(safe=false)은 도착 시각이 없어도 LATE, 그 외에 도착 시각이나 안전 여부가 없으면 null. */
     fun arrival(
         dueAt: LocalDateTime,
         arrivedAt: LocalDateTime?,

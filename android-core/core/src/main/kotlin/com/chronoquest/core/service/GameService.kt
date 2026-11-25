@@ -8,12 +8,17 @@ import com.chronoquest.core.data.QuestRecordEntity
 import com.chronoquest.core.data.RecordSource
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.domain.Celebrations
+import com.chronoquest.core.domain.CleanupFilter
 import com.chronoquest.core.domain.RecordPolicy
 import com.chronoquest.core.domain.RecordResult
 import com.chronoquest.core.domain.RejectReason
+import com.chronoquest.core.domain.RepresentativeTitle
+import com.chronoquest.core.domain.Today
+import com.chronoquest.core.domain.TodaySummary
 import com.chronoquest.rules.engine.Engine
 import com.chronoquest.rules.engine.GameState
 import com.chronoquest.rules.model.QuestStatus
+import com.chronoquest.rules.titles.TitleCatalog
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -40,7 +45,8 @@ sealed interface ActionResult {
 class GameService(
     private val db: ChronoDatabase,
     private val clock: Clock,
-    private val engine: Engine = Engine(),
+    private val catalog: TitleCatalog = TitleCatalog.load(),
+    private val engine: Engine = Engine(catalog),
 ) {
     private val ledgers = LedgerRepository(db)
     private val mutex = Mutex()
@@ -102,6 +108,29 @@ class GameService(
     suspend fun markSeen(keys: Collection<String>) {
         val at = clock.nowLocal()
         db.celebrationDao().markSeen(keys.map { CelebrationSeenEntity(grantKey = it, seenAt = at) })
+    }
+
+    /** 홈 "오늘의 퀘스트"용 요약. */
+    suspend fun today(): TodaySummary {
+        val now = clock.nowLocal()
+        val state = engine.compute(ledgers.loadLedger(), now)
+        return Today.summarize(now.toLocalDate(), state, db.questDao().all(), db.recordDao().all(), db.dayDao().all())
+    }
+
+    /** 홈 "정리 필요" 카드 대상. */
+    suspend fun needsCleanup(): List<QuestEntity> {
+        val now = clock.nowLocal()
+        return CleanupFilter.needsCleanup(engine.compute(ledgers.loadLedger(), now), db.questDao().all(), now)
+    }
+
+    suspend fun representativeTitle(): String =
+        RepresentativeTitle.resolve(ledgers.settings().representativeTitleId, state(), catalog)
+
+    /** 가진 칭호만 대표로 고를 수 있다. null이면 선택을 지운다. 고를 수 없으면 false. */
+    suspend fun setRepresentativeTitle(titleId: Int?): Boolean {
+        if (titleId != null && (state().inventory[titleId] ?: 0) == 0) return false
+        db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = titleId))
+        return true
     }
 
     private suspend fun recordAction(

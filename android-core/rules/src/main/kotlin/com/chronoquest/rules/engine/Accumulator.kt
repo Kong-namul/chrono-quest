@@ -17,6 +17,8 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     var perfectWeekStreak: Streak = Streak()
         private set
     private val grants = mutableListOf<Grant>()
+    private val titleCounts = mutableMapOf<Int, Int>()
+    private var threeWeekBonuses = 0
     /** 보류된 주가 나오면 그 뒤 주들은 판정하지 않는다(스펙 5.2 보류 규칙). */
     private var weeksBlocked = false
     private var monthsBlocked = false
@@ -95,7 +97,8 @@ internal class Accumulator(private val catalog: TitleCatalog) {
                 perfectWeekStreak = perfectWeekStreak.advance()
                 addXp("$key:xp", e.at, GrantType.XP_PERFECT_WEEK, XP_PERFECT_WEEK)
                 if (perfectWeekStreak.current % 3 == 0) {
-                    addXp("$key:3w", e.at, GrantType.XP_THREE_WEEKS, XP_THREE_WEEKS)
+                    threeWeekBonuses += 1
+                    addXp("bonus:3w:$threeWeekBonuses", e.at, GrantType.XP_THREE_WEEKS, XP_THREE_WEEKS, key)
                 }
                 award(key, e.at, catalog.cumulativeAwards(Series.PERFECT_WEEK_TOTAL, counters.perfectWeeks))
                 award(key, e.at, catalog.streakAwards(Series.PERFECT_WEEK_STREAK, perfectWeekStreak.current))
@@ -117,12 +120,13 @@ internal class Accumulator(private val catalog: TitleCatalog) {
         }
     }
 
-    private fun addXp(key: String, at: LocalDateTime, type: GrantType, amount: Int) {
+    private fun addXp(key: String, at: LocalDateTime, type: GrantType, amount: Int, source: String = key.substringBeforeLast(':')) {
         xp += amount
-        grants += Grant(key = key, at = at, type = type, xp = amount)
+        grants += Grant(key = key, source = source, at = at, type = type, xp = amount)
         pet.onXp(xp, at).forEach { ev ->
             grants += Grant(
                 key = "pet:evolve:${ev.stage}",
+                source = "pet",
                 at = at,
                 type = GrantType.PET_EVOLVED,
                 detail = "${ev.stage}:${ev.form}",
@@ -132,8 +136,11 @@ internal class Accumulator(private val catalog: TitleCatalog) {
 
     private fun award(eventKey: String, at: LocalDateTime, titles: List<Title>) {
         titles.forEach { t ->
+            val n = (titleCounts[t.id] ?: 0) + 1
+            titleCounts[t.id] = n
             grants += Grant(
-                key = "$eventKey:title:${t.id}",
+                key = "title:${t.id}:$n",
+                source = eventKey,
                 at = at,
                 type = GrantType.TITLE,
                 titleId = t.id,

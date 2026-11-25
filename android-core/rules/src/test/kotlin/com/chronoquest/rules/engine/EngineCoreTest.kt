@@ -34,7 +34,7 @@ class EngineCoreTest {
         assertEquals(2, s.codexCount)
         assertEquals(Streak(1, 1), s.arriveStreak)
         assertEquals(ArrivalVerdict.ON_TIME, s.outcomes.getValue(q.id).verdict)
-        assertTrue(s.grants.any { it.key == "arr:${q.id}:title:1" && it.titleId == 1 })
+        assertTrue(s.grants.any { it.key == "title:1:1" && it.source == "arr:${q.id}" && it.titleId == 1 })
     }
 
     @Test

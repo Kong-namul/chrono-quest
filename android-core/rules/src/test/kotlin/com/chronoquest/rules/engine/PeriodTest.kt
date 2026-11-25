@@ -83,7 +83,7 @@ class PeriodTest {
         val all = week1 + week2 + week3
         val s = engine.compute(ledger(all, onTimeAll(all)), at("2026-12-21", "00:00"))
         assertEquals(15 * 20 + 3 * 100 + 300, s.xp)
-        assertTrue(s.grants.any { it.key == "week:2026-12-14:3w" && it.xp == 300 })
+        assertTrue(s.grants.any { it.key == "bonus:3w:1" && it.source == "week:2026-12-14" && it.xp == 300 })
         assertEquals(1, s.inventory[143])
     }
 
@@ -112,5 +112,17 @@ class PeriodTest {
         val s = engine.compute(ledger(month, records), at("2027-01-01", "00:00"))
         assertEquals(0, s.counters.perfectMonths)
         assertNull(s.inventory[181])
+    }
+
+    @Test
+    fun `보류된 달이 있으면 뒤 달은 판정하지 않는다`() {
+        val dec = weekdays("2026-11-30", "2026-12-31").map { work(it) }
+        val jan = weekdays("2027-01-01", "2027-01-29").map { work(it) }
+        val pendingQuest = dec.first { it.date == day("2026-12-15") }
+        val records = onTimeAll(dec.filter { it != pendingQuest }) + onTimeAll(jan)
+        val s = engine.compute(ledger(dec + jan, records), at("2027-02-01", "00:00"))
+        assertEquals(0, s.counters.perfectMonths)
+        assertTrue(s.grants.none { it.key == "month:2027-01:xp" })
+        assertTrue(pendingQuest.id in s.pendingQuestIds)
     }
 }

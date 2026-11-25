@@ -26,8 +26,8 @@ object Judges {
         resolution: Resolution,
     ): ArrivalVerdict? {
         if (resolution == Resolution.NO_RECORD) return ArrivalVerdict.LATE
+        if (safe == false) return ArrivalVerdict.LATE
         if (arrivedAt == null || safe == null) return null
-        if (!safe) return ArrivalVerdict.LATE
         val due = dueAt.toMinute()
         val arr = arrivedAt.toMinute()
         return when {

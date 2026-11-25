@@ -1,8 +1,12 @@
 package com.chronoquest.rules.engine
 
 import com.chronoquest.rules.at
+import com.chronoquest.rules.judge.ArrivalVerdict
+import com.chronoquest.rules.close
 import com.chronoquest.rules.dailyOthers
 import com.chronoquest.rules.day
+import com.chronoquest.rules.early
+import com.chronoquest.rules.other
 import com.chronoquest.rules.late
 import com.chronoquest.rules.ledger
 import com.chronoquest.rules.onTime
@@ -84,6 +88,25 @@ class PetTest {
         assertEquals(PetMood.SAD, sad.pet.mood)
         assertEquals(PetMood.HAPPY, happy.pet.mood)
         assertEquals(PetMood.NORMAL, nextDay.pet.mood)
+    }
+
+    @Test
+    fun `정시와 아슬아슬이 섞이면 보통 아슬아슬만 있어도 보통`() {
+        val a = work("2026-11-25")
+        val b = other("2026-11-25", "19:00")
+        val mixed = engine.compute(ledger(listOf(a, b), listOf(a.onTime(), b.close())), at("2026-11-25", "20:00"))
+        val closeOnly = engine.compute(ledger(listOf(a), listOf(a.close())), at("2026-11-25", "18:00"))
+        assertEquals(PetMood.NORMAL, mixed.pet.mood)
+        assertEquals(PetMood.NORMAL, closeOnly.pet.mood)
+        assertEquals(PetMood.NORMAL, PetTracker.moodFor(listOf(ArrivalVerdict.ON_TIME, ArrivalVerdict.CLOSE)))
+        assertEquals(PetMood.NORMAL, PetTracker.moodFor(emptyList()))
+    }
+
+    @Test
+    fun `조기만 있으면 신남`() {
+        val q = work("2026-11-25")
+        val s = engine.compute(ledger(listOf(q), listOf(q.early())), at("2026-11-25", "18:00"))
+        assertEquals(PetMood.HAPPY, s.pet.mood)
     }
 
     @Test

@@ -16,6 +16,8 @@ enum class GrantType {
  */
 data class Grant(
     val key: String,
+    /** 이 지급을 낳은 기록/기간 (예: arr:<questId>, week:<weekStart>). */
+    val source: String,
     val at: LocalDateTime,
     val type: GrantType,
     val xp: Int = 0,

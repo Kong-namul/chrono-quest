@@ -81,7 +81,7 @@ internal class PetTracker {
 
         fun moodFor(todayVerdicts: List<ArrivalVerdict>): PetMood = when {
             todayVerdicts.any { it == ArrivalVerdict.LATE } -> PetMood.SAD
-            todayVerdicts.any { it.isOnTime } -> PetMood.HAPPY
+            todayVerdicts.isNotEmpty() && todayVerdicts.all { it.isOnTime } -> PetMood.HAPPY
             else -> PetMood.NORMAL
         }
     }

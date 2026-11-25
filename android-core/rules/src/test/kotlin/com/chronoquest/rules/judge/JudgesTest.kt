@@ -43,6 +43,12 @@ class JudgesTest {
     }
 
     @Test
+    fun `시각 없이 위험 이동이면 지각`() {
+        val due = at("2026-11-25", "09:00")
+        assertEquals(ArrivalVerdict.LATE, Judges.arrival(due, null, false, Resolution.NONE))
+    }
+
+    @Test
     fun `위험 이동은 시간과 관계없이 지각`() {
         assertEquals(ArrivalVerdict.LATE, judge("08:30", safe = false))
     }

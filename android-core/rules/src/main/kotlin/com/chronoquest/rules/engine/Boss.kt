@@ -101,6 +101,7 @@ internal object Bosses {
             .map {
                 Grant(
                     key = "boss:${it.weekStart}:result",
+                    source = "boss:${it.weekStart}",
                     at = it.weekStart.plusDays(7).atStartOfDay(),
                     type = GrantType.BOSS_RESULT,
                     detail = "${it.status}:${it.boss.id}",

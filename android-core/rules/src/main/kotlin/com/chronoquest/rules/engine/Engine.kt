@@ -23,7 +23,7 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
         val quests = activeQuests(ledger)
         val records = ledger.records.distinctBy { it.questId }.associateBy { it.questId }
         val days = ledger.days.distinctBy { it.date }.filter { !it.date.isBefore(ledger.seasonStart) }
-        val outcomes = judgeAll(quests, records)
+        val outcomes = judgeAll(quests, records).toSortedMap()
 
         val acc = Accumulator(catalog)
         buildEvents(quests, records, days, outcomes, ledger.seasonStart, now)

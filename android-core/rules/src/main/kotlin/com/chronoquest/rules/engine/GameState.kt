@@ -56,5 +56,6 @@ data class GameState(
     val codexCount: Int,
     val outcomes: Map<String, QuestOutcome>,
     val pendingQuestIds: List<String>,
+    val pet: PetState,
     val grants: List<Grant>,
 )

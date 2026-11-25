@@ -36,6 +36,10 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
             .map { it.id }
         val grants = acc.grants()
         val inventory = grants.mapNotNull { it.titleId }.groupingBy { it }.eachCount().toSortedMap()
+        val today = now.toLocalDate()
+        val mood = PetTracker.moodFor(
+            quests.filter { it.date == today }.mapNotNull { outcomes.getValue(it.id).verdict },
+        )
         val tier = Tier.of(acc.xp)
         return GameState(
             xp = acc.xp,
@@ -48,6 +52,7 @@ class Engine(private val catalog: TitleCatalog = TitleCatalog.load()) {
             codexCount = inventory.size,
             outcomes = outcomes,
             pendingQuestIds = pending,
+            pet = acc.pet.state(mood),
             grants = grants,
         )
     }

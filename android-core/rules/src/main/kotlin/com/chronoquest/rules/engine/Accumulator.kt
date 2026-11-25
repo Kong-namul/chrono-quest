@@ -21,6 +21,7 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     private var weeksBlocked = false
     private var monthsBlocked = false
     private val comeback = ComebackTracker()
+    val pet = PetTracker()
 
     fun grants(): List<Grant> = grants.toList()
 
@@ -43,6 +44,7 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     }
 
     private fun onArrive(e: Event.Arrive) {
+        pet.onArrival(e.verdict)
         val key = "arr:${e.quest.id}"
         when (e.verdict) {
             ArrivalVerdict.EARLY, ArrivalVerdict.ON_TIME -> {
@@ -118,6 +120,14 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     private fun addXp(key: String, at: LocalDateTime, type: GrantType, amount: Int) {
         xp += amount
         grants += Grant(key = key, at = at, type = type, xp = amount)
+        pet.onXp(xp, at).forEach { ev ->
+            grants += Grant(
+                key = "pet:evolve:${ev.stage}",
+                at = at,
+                type = GrantType.PET_EVOLVED,
+                detail = "${ev.stage}:${ev.form}",
+            )
+        }
     }
 
     private fun award(eventKey: String, at: LocalDateTime, titles: List<Title>) {

@@ -4,6 +4,22 @@ A1(판정 엔진) 최종 리뷰와 태스크 리뷰에서 나왔지만 A1 범위
 
 ## A2 (데이터 계층 + 수동 플레이 + Compose 임시 화면)
 
+> **A2a에서 처리함 (2026-11-25)**
+> - 중복 금지: Room 기본키
+> - 미래 시각 금지, `safe`는 도착 때만: `RecordPolicy`
+> - `date == dueAt.toLocalDate()`: `QuestGenerator`, `ScheduleService.addOneOffQuest`
+> - 시각 저장: `Converters`(로컬 벽시계 시각, 초 단위)
+> - 대표 칭호: `RepresentativeTitle`, `GameService.representativeTitle()`
+> - 오늘 요약: `Today`, `GameService.today()`
+> - 티어 승급 연출 키 `tier:<TIER>`: `Celebrations`
+> - "정리 필요" +3시간 필터: `CleanupFilter`
+> - 엔진 인스턴스 하나: `GameService`가 생성자로 받음
+>
+> **A2b·Phase B로 남은 것**
+> - grants 범위 제한(bridge)
+> - 보스 `endsAt`과 데미지 출처별 내역
+> - pet/boss 키 재표시 정책 문서화
+
 ### 원장 계약 (Room → `Ledger`)
 - **중복 금지**: `Quest.id`, `QuestRecord.questId`, `DayRecord.date`를 Room 기본키로 둔다. 엔진은 중복이 있으면 첫 번째만 쓰므로 결과가 입력 순서에 따라 달라진다. `Ledger` KDoc에 이 계약을 적는다.
 - **미래 시각 금지**: 기록을 고칠 때 `now`보다 늦은 출발·도착 시각은 저장하지 않는다. 엔진은 미래 기록도 XP로 친다.

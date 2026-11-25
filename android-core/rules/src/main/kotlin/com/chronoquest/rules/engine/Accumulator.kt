@@ -20,6 +20,7 @@ internal class Accumulator(private val catalog: TitleCatalog) {
     /** 보류된 주가 나오면 그 뒤 주들은 판정하지 않는다(스펙 5.2 보류 규칙). */
     private var weeksBlocked = false
     private var monthsBlocked = false
+    private val comeback = ComebackTracker()
 
     fun grants(): List<Grant> = grants.toList()
 
@@ -59,6 +60,10 @@ internal class Accumulator(private val catalog: TitleCatalog) {
             }
             ArrivalVerdict.CLOSE -> Unit
             ArrivalVerdict.LATE -> arriveStreak = arriveStreak.reset()
+        }
+        if (comeback.onArrival(e.verdict)) {
+            counters = counters.copy(comebacks = counters.comebacks + 1)
+            award(key, e.at, catalog.cumulativeAwards(Series.COMEBACK_TOTAL, counters.comebacks))
         }
     }
 

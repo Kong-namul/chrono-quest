@@ -22,6 +22,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Rules and core unit tests
+      - name: Unit tests and debug build
         working-directory: android-core
-        run: ./gradlew :rules:test :core:testDebugUnitTest
+        run: ./gradlew :rules:test :core:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug

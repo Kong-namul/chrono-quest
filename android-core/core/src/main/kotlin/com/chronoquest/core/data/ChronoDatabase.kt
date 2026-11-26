@@ -32,7 +32,15 @@ abstract class ChronoDatabase : RoomDatabase() {
     companion object {
         const val NAME = "chrono.db"
 
+        @Volatile
+        private var instance: ChronoDatabase? = null
+
+        /** 프로세스에 하나뿐인 DB. 여러 서비스가 같은 인스턴스를 써야 트랜잭션이 서로를 직렬화한다. */
         fun build(context: Context): ChronoDatabase =
-            Room.databaseBuilder(context.applicationContext, ChronoDatabase::class.java, NAME).build()
+            instance ?: synchronized(this) {
+                instance ?: Room.databaseBuilder(context.applicationContext, ChronoDatabase::class.java, NAME)
+                    .build()
+                    .also { instance = it }
+            }
     }
 }

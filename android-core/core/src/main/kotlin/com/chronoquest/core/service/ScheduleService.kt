@@ -60,7 +60,7 @@ class ScheduleService(
      * 오늘부터 [days]일치 템플릿 일정을 만들고 새로 만든 개수를 돌려준다.
      * 이미 있는 ID, 같은 템플릿이 그날 이미 만든 일정, 이미 지난 일정은 만들지 않는다.
      */
-    suspend fun generateQuests(days: Int = QuestGenerator.HORIZON_DAYS): Int {
+    suspend fun generateQuests(days: Int = QuestGenerator.HORIZON_DAYS): Int = db.withTransaction {
         val now = clock.nowLocal()
         val existing = db.questDao().all()
         val existingIds = existing.mapTo(HashSet()) { it.id }
@@ -69,21 +69,22 @@ class ScheduleService(
             it.id !in existingIds && (it.templateId to it.date) !in templateDays && it.dueAt.isAfter(now)
         }
         db.questDao().insertAll(fresh)
-        return fresh.size
+        fresh.size
     }
 
+    /** 단발 일정 추가. 중복 확인과 저장은 한 트랜잭션이다. */
     suspend fun addOneOffQuest(
         date: LocalDate,
         kind: QuestKind,
         title: String,
         dueTime: LocalTime,
         targetDepartTime: LocalTime,
-    ): ScheduleResult {
+    ): ScheduleResult = db.withTransaction {
         val problems = TemplateRules.problems(title, dueTime, targetDepartTime).toMutableList()
         if (date.isBefore(ledgers.settings().seasonStart)) problems += ScheduleProblem.BEFORE_SEASON
         val id = QuestIds.of(date, kind, dueTime)
         if (problems.isEmpty() && db.questDao().get(id) != null) problems += ScheduleProblem.DUPLICATE
-        if (problems.isNotEmpty()) return ScheduleResult.Rejected(problems)
+        if (problems.isNotEmpty()) return@withTransaction ScheduleResult.Rejected(problems)
         db.questDao().insertAll(
             listOf(
                 QuestEntity(
@@ -97,8 +98,38 @@ class ScheduleService(
                 ),
             ),
         )
-        return ScheduleResult.Saved(id)
+        ScheduleResult.Saved(id)
     }
+
+    /**
+     * 일정 하나의 예정·목표 출발 시각을 바꾼다(이른 기록 확인 뒤 "일정 변경"). 기록이 있으면 바꿀 수 없다.
+     * ID가 예정 시각을 담으므로 옛 일정을 지우고 새 ID로 다시 넣는다. 나머지 필드는 그대로다.
+     */
+    suspend fun reschedule(questId: String, dueTime: LocalTime, targetDepartTime: LocalTime): ScheduleResult =
+        db.withTransaction {
+            val quest = db.questDao().get(questId)
+                ?: return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.NOT_FOUND))
+            if (db.recordDao().get(questId) != null) {
+                return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.HAS_RECORD))
+            }
+            val problems = TemplateRules.problems(quest.title, dueTime, targetDepartTime)
+            if (problems.isNotEmpty()) return@withTransaction ScheduleResult.Rejected(problems)
+            val newId = QuestIds.of(quest.date, quest.kind, dueTime)
+            if (newId != questId && db.questDao().get(newId) != null) {
+                return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.DUPLICATE))
+            }
+            db.questDao().deleteIds(listOf(questId))
+            db.questDao().insertAll(
+                listOf(
+                    quest.copy(
+                        id = newId,
+                        dueAt = quest.date.atTime(dueTime.truncatedTo(ChronoUnit.MINUTES)),
+                        targetDepartAt = quest.date.atTime(targetDepartTime.truncatedTo(ChronoUnit.MINUTES)),
+                    ),
+                ),
+            )
+            ScheduleResult.Saved(newId)
+        }
 
     suspend fun vacations(): List<LocalDate> = db.vacationDao().all().map { it.date }
 

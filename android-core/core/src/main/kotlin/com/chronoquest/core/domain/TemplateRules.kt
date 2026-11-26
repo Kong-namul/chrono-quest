@@ -4,7 +4,7 @@ import com.chronoquest.core.data.ScheduleTemplateEntity
 import java.time.DayOfWeek
 import java.time.LocalTime
 
-enum class ScheduleProblem { BLANK_TITLE, NO_DAYS, DEPART_AFTER_DUE, DUPLICATE, BEFORE_SEASON }
+enum class ScheduleProblem { BLANK_TITLE, NO_DAYS, DEPART_AFTER_DUE, DUPLICATE, BEFORE_SEASON, NOT_FOUND, HAS_RECORD }
 
 /** 반복 템플릿과 단발 일정의 입력 검증, 요일 마스크(월 bit0 ~ 일 bit6). */
 object TemplateRules {

@@ -11,8 +11,10 @@ import com.chronoquest.core.dt
 import com.chronoquest.core.inMemoryDb
 import com.chronoquest.core.weekdayTemplate
 import com.chronoquest.rules.model.QuestKind
+import com.chronoquest.rules.model.QuestStatus
 import java.time.LocalTime
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -97,6 +99,15 @@ class ScheduleServiceTest {
     }
 
     @Test
+    fun `취소한 템플릿 일정은 템플릿을 고쳐도 되살아나지 않는다`() = runTest {
+        val id = (service().saveTemplate(weekdayTemplate()) as ScheduleResult.Saved).id.toLong()
+        val canceled = db.questDao().get("2026-11-27-WORK-09:00")!!.copy(status = QuestStatus.CANCELED)
+        db.questDao().update(canceled)
+        service().saveTemplate(weekdayTemplate(id = id, title = "회사"))
+        assertEquals(listOf(canceled), db.questDao().onDate(d("2026-11-27")))
+    }
+
+    @Test
     fun `템플릿을 지우면 기록 없는 미래 일정만 지운다`() = runTest {
         val id = (service().saveTemplate(weekdayTemplate()) as ScheduleResult.Saved).id.toLong()
         db.recordDao().upsert(
@@ -134,6 +145,60 @@ class ScheduleServiceTest {
             ScheduleResult.Rejected(listOf(ScheduleProblem.BLANK_TITLE, ScheduleProblem.DEPART_AFTER_DUE)),
             svc.addOneOffQuest(d("2026-11-29"), QuestKind.OTHER, " ", LocalTime.parse("14:00"), LocalTime.parse("14:10")),
         )
+    }
+
+    @Test
+    fun `일정 시각을 바꾸면 ID와 시각만 바뀌고 나머지는 그대로다`() = runTest {
+        service().saveTemplate(weekdayTemplate())
+        val old = db.questDao().get("2026-11-26-WORK-09:00")!!
+        assertEquals(
+            ScheduleResult.Saved("2026-11-26-WORK-10:00"),
+            service().reschedule(old.id, LocalTime.parse("10:00"), LocalTime.parse("09:20")),
+        )
+        assertNull(db.questDao().get(old.id))
+        assertEquals(
+            old.copy(id = "2026-11-26-WORK-10:00", dueAt = dt("2026-11-26", "10:00"), targetDepartAt = dt("2026-11-26", "09:20")),
+            db.questDao().get("2026-11-26-WORK-10:00"),
+        )
+        assertEquals(0, service().generateQuests())
+        assertEquals(
+            ScheduleResult.Saved("2026-11-27-WORK-09:00"),
+            service().reschedule("2026-11-27-WORK-09:00", LocalTime.parse("09:00"), LocalTime.parse("08:40")),
+        )
+        assertEquals(dt("2026-11-27", "08:40"), db.questDao().get("2026-11-27-WORK-09:00")?.targetDepartAt)
+    }
+
+    @Test
+    fun `기록이 있거나 없는 일정은 시각을 바꿀 수 없다`() = runTest {
+        service().saveTemplate(weekdayTemplate())
+        db.recordDao().upsert(
+            QuestRecordEntity(questId = "2026-11-25-WORK-09:00", departedAt = dt("2026-11-25", "06:50")),
+        )
+        assertEquals(
+            ScheduleResult.Rejected(listOf(ScheduleProblem.HAS_RECORD)),
+            service().reschedule("2026-11-25-WORK-09:00", LocalTime.parse("10:00"), LocalTime.parse("09:30")),
+        )
+        assertEquals(
+            ScheduleResult.Rejected(listOf(ScheduleProblem.NOT_FOUND)),
+            service().reschedule("없는-일정", LocalTime.parse("10:00"), LocalTime.parse("09:30")),
+        )
+        assertTrue("2026-11-25-WORK-09:00" in questIds())
+    }
+
+    @Test
+    fun `바꾼 시각이 다른 일정과 겹치거나 잘못되면 거부한다`() = runTest {
+        val svc = service()
+        svc.addOneOffQuest(d("2026-11-28"), QuestKind.OTHER, "보드게임", LocalTime.parse("14:00"), LocalTime.parse("13:20"))
+        svc.addOneOffQuest(d("2026-11-28"), QuestKind.OTHER, "저녁", LocalTime.parse("18:00"), LocalTime.parse("17:30"))
+        assertEquals(
+            ScheduleResult.Rejected(listOf(ScheduleProblem.DUPLICATE)),
+            svc.reschedule("2026-11-28-OTHER-18:00", LocalTime.parse("14:00"), LocalTime.parse("13:30")),
+        )
+        assertEquals(
+            ScheduleResult.Rejected(listOf(ScheduleProblem.DEPART_AFTER_DUE)),
+            svc.reschedule("2026-11-28-OTHER-18:00", LocalTime.parse("17:00"), LocalTime.parse("17:10")),
+        )
+        assertEquals(listOf("2026-11-28-OTHER-14:00", "2026-11-28-OTHER-18:00"), questIds())
     }
 
     @Test

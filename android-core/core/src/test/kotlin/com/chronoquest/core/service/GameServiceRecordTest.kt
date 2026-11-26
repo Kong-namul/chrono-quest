@@ -13,6 +13,7 @@ import com.chronoquest.rules.judge.ArrivalVerdict
 import com.chronoquest.rules.model.QuestKind
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -113,6 +114,30 @@ class GameServiceRecordTest {
         val result = done(service("10:00").cancelQuest(work.id))
         assertEquals(-20, result.xpGained)
         assertFalse(work.id in service("10:00").state().outcomes)
+    }
+
+    @Test
+    fun `예정보다 30분 이상 이른 도착은 기록하지 않고 확인을 묻는다`() = runTest {
+        assertEquals(ActionResult.ConfirmEarly(605), service("08:55").arrive(other.id, safe = true))
+        assertNull(db.recordDao().get(other.id))
+        assertTrue(service("08:55").arrive(other.id, safe = true, allowEarly = true) is ActionResult.Done)
+        assertEquals(dt("2026-11-30", "08:55"), db.recordDao().get(other.id)?.arrivedAt)
+    }
+
+    @Test
+    fun `내일 행동통제는 미리 답할 수 없다`() = runTest {
+        assertEquals(
+            ActionResult.Rejected(RejectReason.FUTURE_TIME),
+            service("08:00").answerSelfControl(d("2026-12-01"), true),
+        )
+        assertNull(db.dayDao().get(d("2026-12-01")))
+    }
+
+    @Test
+    fun `이미 본 연출은 쓰기 결과의 새 연출에서 빠진다`() = runTest {
+        val svc = service("08:55")
+        svc.markSeen(listOf("title:1:1"))
+        assertEquals(listOf("title:21:1"), done(svc.arrive(work.id, safe = true)).newCelebrations.map { it.key })
     }
 
     @Test

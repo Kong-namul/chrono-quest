@@ -47,10 +47,14 @@ interface QuestDao {
     @Query("DELETE FROM quest WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<String>)
 
-    /** 템플릿이 만든 일정 중 [after]보다 뒤에 있고 기록도 없는 것. 템플릿을 고치거나 지울 때 다시 만든다. */
+    /**
+     * 템플릿이 만든 예정 일정 중 [after]보다 뒤에 있고 기록도 없는 것. 템플릿을 고치거나 지울 때 다시 만든다.
+     * 취소한 일정은 남겨 둬야 그날 일정이 되살아나지 않는다.
+     */
     @Query(
         "SELECT q.id FROM quest q LEFT JOIN quest_record r ON r.questId = q.id " +
-            "WHERE q.templateId = :templateId AND q.dueAt > :after AND r.questId IS NULL",
+            "WHERE q.templateId = :templateId AND q.dueAt > :after AND r.questId IS NULL " +
+            "AND q.status = 'SCHEDULED'",
     )
     suspend fun unrecordedFutureIds(templateId: Long, after: LocalDateTime): List<String>
 }

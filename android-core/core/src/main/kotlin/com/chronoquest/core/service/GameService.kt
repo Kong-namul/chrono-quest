@@ -1,5 +1,6 @@
 package com.chronoquest.core.service
 
+import androidx.room.withTransaction
 import com.chronoquest.core.data.ChronoDatabase
 import com.chronoquest.core.data.CelebrationSeenEntity
 import com.chronoquest.core.data.DayRecordEntity
@@ -35,12 +36,16 @@ sealed interface ActionResult {
 
     data class Rejected(val reason: RejectReason) : ActionResult
 
+    /** 기준 시각보다 [minutesEarly]분 이르다. 기록하지 않았다. 일정을 바꾸거나 `allowEarly`로 다시 부른다. */
+    data class ConfirmEarly(val minutesEarly: Long) : ActionResult
+
     data object NotFound : ActionResult
 }
 
 /**
  * 기록 쓰기와 연출의 창구. 앱에서 하나만 만들어 재사용한다(엔진 인스턴스도 하나, 인계 메모 A2).
- * 쓰기는 직렬화하고, 쓰기 전후 상태를 비교해 새로 생긴 연출을 돌려준다.
+ * 쓰기는 뮤텍스와 DB 트랜잭션 안에서 읽기-판단-쓰기를 한 번에 하므로, 인스턴스가 여럿이어도 먼저 확정된 것이 이긴다.
+ * 쓰기 전후 상태를 비교해 새로 생긴 연출을 돌려준다.
  */
 class GameService(
     private val db: ChronoDatabase,
@@ -51,28 +56,32 @@ class GameService(
     private val ledgers = LedgerRepository(db)
     private val mutex = Mutex()
 
-    suspend fun state(): GameState = engine.compute(ledgers.loadLedger(), clock.nowLocal())
+    suspend fun state(): GameState = stateAt(clock.nowLocal())
 
+    /** 출발 기록. 목표 출발보다 30분 이상 이르면 [ActionResult.ConfirmEarly]를 돌려주고, [allowEarly]면 그대로 기록한다. */
     suspend fun depart(
         questId: String,
         at: LocalDateTime? = null,
         source: RecordSource = RecordSource.BUTTON,
-    ): ActionResult = mutex.withLock {
-        val now = clock.nowLocal()
-        val result = recordAction(questId) { quest, current ->
-            RecordPolicy.depart(quest, current, at ?: now, now, source)
+        allowEarly: Boolean = false,
+    ): ActionResult = write { now ->
+        val result = recordAction(questId, now) { quest, current ->
+            RecordPolicy.depart(quest, current, at ?: now, now, source, allowEarly)
         }
         if (result is ActionResult.Done) result.copy(askSelfControl = shouldAskSelfControl(questId)) else result
     }
 
+    /** 도착 기록. 예정보다 30분 이상 이르면 [ActionResult.ConfirmEarly]를 돌려주고, [allowEarly]면 그대로 기록한다. */
     suspend fun arrive(
         questId: String,
         safe: Boolean,
         at: LocalDateTime? = null,
         source: RecordSource = RecordSource.BUTTON,
-    ): ActionResult = mutex.withLock {
-        val now = clock.nowLocal()
-        recordAction(questId) { quest, current -> RecordPolicy.arrive(quest, current, at ?: now, safe, now, source) }
+        allowEarly: Boolean = false,
+    ): ActionResult = write { now ->
+        recordAction(questId, now) { quest, current ->
+            RecordPolicy.arrive(quest, current, at ?: now, safe, now, source, allowEarly)
+        }
     }
 
     suspend fun editRecord(
@@ -80,23 +89,24 @@ class GameService(
         departedAt: LocalDateTime?,
         arrivedAt: LocalDateTime?,
         safe: Boolean?,
-    ): ActionResult = mutex.withLock {
-        val now = clock.nowLocal()
-        recordAction(questId) { quest, current -> RecordPolicy.edit(quest, current, departedAt, arrivedAt, safe, now) }
+    ): ActionResult = write { now ->
+        recordAction(questId, now) { quest, current -> RecordPolicy.edit(quest, current, departedAt, arrivedAt, safe, now) }
     }
 
-    suspend fun resolveNoRecord(questId: String): ActionResult = mutex.withLock {
-        recordAction(questId) { quest, current -> RecordPolicy.resolveNoRecord(quest, current) }
+    suspend fun resolveNoRecord(questId: String): ActionResult = write { now ->
+        recordAction(questId, now) { quest, current -> RecordPolicy.resolveNoRecord(quest, current, now) }
     }
 
     /** 불가피한 취소(스펙 6.4). 판정에서 빠진다. */
-    suspend fun cancelQuest(questId: String): ActionResult = mutex.withLock {
-        val quest = db.questDao().get(questId) ?: return@withLock ActionResult.NotFound
-        applyChange { db.questDao().update(quest.copy(status = QuestStatus.CANCELED)) }
+    suspend fun cancelQuest(questId: String): ActionResult = write { now ->
+        val quest = db.questDao().get(questId) ?: return@write ActionResult.NotFound
+        applyChange(now) { db.questDao().update(quest.copy(status = QuestStatus.CANCELED)) }
     }
 
-    suspend fun answerSelfControl(date: LocalDate, value: Boolean): ActionResult = mutex.withLock {
-        applyChange {
+    /** 행동통제 답. 오늘 이후 날짜는 미리 답할 수 없다. */
+    suspend fun answerSelfControl(date: LocalDate, value: Boolean): ActionResult = write { now ->
+        if (date.isAfter(now.toLocalDate())) return@write ActionResult.Rejected(RejectReason.FUTURE_TIME)
+        applyChange(now) {
             val current = db.dayDao().get(date) ?: DayRecordEntity(date = date)
             db.dayDao().upsert(current.copy(selfControl = value))
         }
@@ -123,31 +133,61 @@ class GameService(
         return CleanupFilter.needsCleanup(engine.compute(ledgers.loadLedger(), now), db.questDao().all(), now)
     }
 
-    suspend fun representativeTitle(): String =
-        RepresentativeTitle.resolve(ledgers.settings().representativeTitleId, state(), catalog)
+    /**
+     * 홈 대표 칭호 이름. 저장된 것이 없거나 더는 갖고 있지 않으면 가장 최근 칭호를 골라 저장하고,
+     * 칭호가 하나도 없으면 저장값을 지운다. 새 칭호를 얻었다고 저절로 바꾸지는 않는다.
+     */
+    suspend fun representativeTitle(): String = write { now ->
+        val stored = ledgers.settings().representativeTitleId
+        val choice = RepresentativeTitle.resolve(stored, stateAt(now), catalog)
+        if (choice.titleId != stored) {
+            db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = choice.titleId))
+        }
+        choice.name
+    }
+
+    /** 칭호 화면의 NEW 표시 대상: 가진 칭호 중 아직 보지 않은 것. */
+    suspend fun newTitleIds(): Set<Int> =
+        Celebrations.newTitleIds(state(), db.celebrationDao().seenKeys().toSet())
+
+    /** 칭호 화면에서 본 칭호의 NEW 표시를 뗀다. */
+    suspend fun markTitlesViewed(ids: Collection<Int>) {
+        markSeen(ids.map { Celebrations.codexKey(it) })
+    }
 
     /** 가진 칭호만 대표로 고를 수 있다. null이면 선택을 지운다. 고를 수 없으면 false. */
-    suspend fun setRepresentativeTitle(titleId: Int?): Boolean {
-        if (titleId != null && (state().inventory[titleId] ?: 0) == 0) return false
+    suspend fun setRepresentativeTitle(titleId: Int?): Boolean = write { now ->
+        if (titleId != null && (stateAt(now).inventory[titleId] ?: 0) == 0) return@write false
         db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = titleId))
-        return true
+        true
     }
+
+    private suspend fun stateAt(now: LocalDateTime): GameState = engine.compute(ledgers.loadLedger(), now)
+
+    /**
+     * 쓰기 한 건. 인스턴스 안에서는 뮤텍스로, 인스턴스 사이에서는 DB 트랜잭션으로 직렬화한다.
+     * 시각은 한 번만 읽어 판단과 전후 상태 계산에 같이 쓴다.
+     */
+    private suspend fun <T> write(action: suspend (now: LocalDateTime) -> T): T =
+        mutex.withLock { db.withTransaction { action(clock.nowLocal()) } }
 
     private suspend fun recordAction(
         questId: String,
+        now: LocalDateTime,
         decide: (QuestEntity, QuestRecordEntity?) -> RecordResult,
     ): ActionResult {
         val quest = db.questDao().get(questId) ?: return ActionResult.NotFound
         return when (val result = decide(quest, db.recordDao().get(questId))) {
             is RecordResult.Rejected -> ActionResult.Rejected(result.reason)
-            is RecordResult.Ok -> applyChange { db.recordDao().upsert(result.record) }
+            is RecordResult.NeedsEarlyConfirmation -> ActionResult.ConfirmEarly(result.minutesEarly)
+            is RecordResult.Ok -> applyChange(now) { db.recordDao().upsert(result.record) }
         }
     }
 
-    private suspend fun applyChange(write: suspend () -> Unit): ActionResult.Done {
-        val before = state()
-        write()
-        val after = state()
+    private suspend fun applyChange(now: LocalDateTime, change: suspend () -> Unit): ActionResult.Done {
+        val before = stateAt(now)
+        change()
+        val after = stateAt(now)
         val beforeKeys = Celebrations.all(before).mapTo(HashSet()) { it.key }
         val seen = db.celebrationDao().seenKeys().toSet()
         return ActionResult.Done(

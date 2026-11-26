@@ -51,4 +51,11 @@ object Celebrations {
 
     fun unseen(state: GameState, seenKeys: Set<String>): List<Celebration> =
         all(state).filter { it.key !in seenKeys }
+
+    /** 칭호 화면 NEW 표시용 본 기록 키. 연출 키와 같은 CelebrationSeen 테이블을 쓴다. */
+    fun codexKey(titleId: Int): String = "codex:$titleId"
+
+    /** 가진 칭호 중 칭호 화면에서 아직 보지 않은 것(ID 순). */
+    fun newTitleIds(state: GameState, seenKeys: Set<String>): Set<Int> =
+        state.inventory.filterValues { it > 0 }.keys.filterTo(LinkedHashSet()) { codexKey(it) !in seenKeys }
 }

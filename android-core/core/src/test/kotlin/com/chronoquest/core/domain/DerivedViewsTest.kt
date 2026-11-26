@@ -12,6 +12,7 @@ import com.chronoquest.rules.engine.Engine
 import com.chronoquest.rules.engine.GameState
 import com.chronoquest.rules.judge.ArrivalVerdict
 import com.chronoquest.rules.model.QuestKind
+import com.chronoquest.rules.model.QuestStatus
 import com.chronoquest.rules.titles.TitleCatalog
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
@@ -64,6 +65,14 @@ class DerivedViewsTest {
     }
 
     @Test
+    fun `보스 결과는 엔진 키 그대로 보스 결과 연출이다`() {
+        val week = listOf("2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04").map { questEntity(it) }
+        val state = stateOf(dt("2026-12-07", "00:00"), week, week.map { onTime(it) })
+        val boss = Celebrations.all(state).single { it.kind == CelebrationKind.BOSS_RESULT }
+        assertEquals("boss:2026-11-30:result", boss.key)
+    }
+
+    @Test
     fun `이미 본 연출은 빠진다`() {
         val q = questEntity("2026-11-25")
         val state = stateOf(dt("2026-11-25", "12:00"), listOf(q), listOf(onTime(q)))
@@ -75,10 +84,11 @@ class DerivedViewsTest {
         val q = questEntity("2026-11-25")
         val empty = stateOf(dt("2026-11-25", "12:00"), listOf(q))
         val earned = stateOf(dt("2026-11-25", "12:00"), listOf(q), listOf(onTime(q)))
-        assertEquals("미각성자", RepresentativeTitle.resolve(null, empty, catalog))
-        assertEquals("최초의 각성", RepresentativeTitle.resolve(1, earned, catalog))
-        assertEquals("운명의 첫걸음", RepresentativeTitle.resolve(null, earned, catalog))
-        assertEquals("운명의 첫걸음", RepresentativeTitle.resolve(61, earned, catalog))
+        assertEquals(TitleChoice(null, "미각성자"), RepresentativeTitle.resolve(null, empty, catalog))
+        assertEquals(TitleChoice(null, "미각성자"), RepresentativeTitle.resolve(1, empty, catalog))
+        assertEquals(TitleChoice(1, "최초의 각성"), RepresentativeTitle.resolve(1, earned, catalog))
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), RepresentativeTitle.resolve(null, earned, catalog))
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), RepresentativeTitle.resolve(61, earned, catalog))
     }
 
     @Test
@@ -110,5 +120,14 @@ class DerivedViewsTest {
         assertNull(summary.quests[1].record)
         assertNull(summary.quests[1].outcome?.verdict)
         assertEquals(day, summary.day)
+    }
+
+    @Test
+    fun `취소한 일정도 오늘 요약에 나오고 판정은 없다`() {
+        val canceled = questEntity("2026-11-30", status = QuestStatus.CANCELED)
+        val now = dt("2026-11-30", "12:00")
+        val summary = Today.summarize(d("2026-11-30"), stateOf(now, listOf(canceled)), listOf(canceled), emptyList(), emptyList())
+        assertEquals(listOf(canceled), summary.quests.map { it.quest })
+        assertNull(summary.quests.single().outcome)
     }
 }

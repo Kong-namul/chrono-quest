@@ -39,6 +39,30 @@ A1(판정 엔진) 최종 리뷰와 태스크 리뷰에서 나왔지만 A1 범위
 - `Engine`은 앱 전체에서 하나만 만든다. 생성할 때마다 `titles.json`을 읽는다.
 - `pet:evolve:<단계>`와 `boss:<주>:result` 키는 내용이 바뀌어도 같은 키다. 예를 들어 예전 주를 휴가로 바꾸면 이후 보스 순서가 밀린다. 이미 본 연출은 다시 띄우지 않고 도감·이력만 조용히 갱신하는 것으로 정한다.
 
+### A2b가 꼭 반영할 것 (A2a 최종 리뷰, 2026-11-25)
+- **프로세스당 하나**: `ChronoDatabase`(이제 `build()`가 싱글턴), `TitleCatalog`, `Engine`, `GameService`, `ScheduleService`를 앱 컨테이너 하나에서만 꺼내 쓴다. 알림 리시버(`goAsync`)와 워커도 마찬가지다. 앱 코드가 DAO로 직접 써서 `RecordPolicy`를 우회하지 않게 한다.
+- **시계**: 생성할 때 받은 `Clock`은 타임존이 고정된다. 호출할 때마다 `ZoneId.systemDefault()`를 읽는 Clock을 쓰거나, `ACTION_TIMEZONE_CHANGED`/`TIME_SET` 때 다시 만든다(스펙 10).
+- **쓰기 없이 바뀌는 상태**: 예정 시각이 지나 보류가 되는 것, +3시간 정리 필요, 월요일 00:00의 주·월 보너스와 보스 결과는 기록을 쓰지 않아도 생긴다. 그래서 필요한 것:
+  - 앱 복귀 시 새로고침, 홈 화면 주기적 갱신
+  - 00:05 워커가 `unseenCelebrations()`를 확인해 알림
+  - 연출을 "본 것"으로 표시하는 시점(알림 또는 결과 화면) 결정
+- **관찰**: 아직 Flow/StateFlow API가 없다. 쓰기 뒤 갱신하는 `StateFlow<GameState>`를 두거나 Room 무효화를 관찰한다.
+- **스레드**: `Engine.compute`와 `TitleCatalog.load()`는 호출한 스레드에서 돈다. `Dispatchers.Default`로 옮긴다.
+- **워커**: `enqueueUniquePeriodicWork`(KEEP)로 매일 생성하고, 앱 시작 때도 한 번 생성한다.
+- **화면**:
+  - `ConfirmEarly` 결과가 오면 "일정 시각을 바꿀래?" 창을 띄운다. [일정 수정]은 `ScheduleService.reschedule` 뒤 기록, [그대로 기록]은 `allowEarly = true`로 다시 호출한다.
+  - 음수 `xpGained`를 처리한다.
+  - 기록 없음으로 정리한 일정은 [출발]을 숨긴다.
+  - 칭호창 NEW 배지: `newTitleIds()`로 그리고, 확인하면 `markTitlesViewed()`
+  - 이미 판정된 일정의 취소나 지난 날짜 휴가 지정을 허용할지, 되돌리기를 둘지 정한다
+- **티어·펫·보스 키**: `tier:<TIER>`는 티어를 잃었다가 다시 얻어도 이미 본 것으로 남는다. 펫·보스 키도 내용이 바뀌어도 같은 키다. 다시 띄우지 않는 정책으로 문서화한다.
+- **설정·백업**: `allowBackup`을 켜고(스펙 4장), 파괴적 마이그레이션은 쓰지 않는다. enum 상수 이름은 바꾸지 않는다(문자열로 저장됨).
+- **DayRecord 부분 갱신**: A3에서 알람·퀴즈 필드를 쓰는 곳이 늘어나므로, 하루 기록은 읽고 고쳐서 쓰는 방식을 트랜잭션 안에서만 한다.
+- **수정 재리뷰의 사소한 것**:
+  - `representativeTitle()`은 읽을 때마다 쓰기 잠금을 잡는다. 홈 화면이 자주 읽으면 잠금 없이 먼저 판단하고, 바꿀 때만 잠그도록 고친다.
+  - `ChronoDatabase.build()`는 이제 "있으면 꺼내고 없으면 만든다"는 뜻이다. `getInstance` 같은 이름으로 바꾸는 것을 검토한다.
+  - `ScheduleService.reschedule`은 지난 시각이나 시즌 이전 날짜로 바꾸는 것을 막지 않는다. 화면에서 막거나 검증을 추가한다.
+
 ## A3 (기상 알람)
 - 퀴즈를 알람보다 먼저 푼 기록이 나오지 않게 저장 시 검증한다. 엔진은 이미 실패로 처리하지만 테스트가 없다.
 

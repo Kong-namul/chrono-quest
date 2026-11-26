@@ -39,7 +39,7 @@ class HomePresenterTest {
         db = inMemoryDb()
         db.questDao().insertAll(listOf(other, work))
         val notifier = SettlementNotifier { xp, celebrations -> notified += xp to celebrations }
-        presenter = HomePresenter(GameService(db, clock), ScheduleService(db, clock), clock, notifier, Dispatchers.Unconfined)
+        presenter = HomePresenter({ GameService(db, clock) }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
     }
 
     @After
@@ -223,5 +223,36 @@ class HomePresenterTest {
         assertEquals(-20, notified.last().first)
         presenter.onCleanupCancel(other.id)
         assertEquals(before + 1, notified.size)
+    }
+
+    @Test
+    fun `출발한 일정에 정리로 도착을 넣어도 출발 기록은 남는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.onSelfControlAnswered(d("2026-11-30"), false)
+        clock.now = dt("2026-11-30", "12:00")
+        presenter.refresh()
+        assertEquals(listOf(work.id), state.cleanup.map { it.id })
+        presenter.onCleanupAddArrival(work.id)
+        val dialog = state.dialog as HomeDialog.AddArrival
+        presenter.onArrivalEntered(dialog, LocalTime.parse("08:58"), true)
+        assertEquals(CardStatus.ON_TIME, card(work.id).status)
+        assertEquals(30, state.xp)
+        assertTrue(state.cleanup.isEmpty())
+    }
+
+    @Test
+    fun `행동통제를 답하지 않고 닫으면 새로고침 때 다시 묻는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        assertEquals(HomeDialog.AskSelfControl(d("2026-11-30")), state.dialog)
+        presenter.dismissDialog()
+        assertNull(state.dialog)
+        presenter.refresh()
+        assertEquals(HomeDialog.AskSelfControl(d("2026-11-30")), state.dialog)
+        presenter.onSelfControlAnswered(d("2026-11-30"), true)
+        assertNull(state.dialog)
+        presenter.refresh()
+        assertNull(state.dialog)
     }
 }

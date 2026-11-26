@@ -10,6 +10,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.window.DialogProperties
 import com.chronoquest.app.ui.theme.ChronoTokens
 import java.time.LocalTime
 
@@ -44,6 +45,7 @@ fun HomeDialogHost(dialog: HomeDialog?, actions: HomeActions) {
         is HomeDialog.Reschedule -> RescheduleDialog(dialog, actions)
         is HomeDialog.AskSelfControl -> AlertDialog(
             onDismissRequest = actions.onDismissDialog,
+            properties = DialogProperties(dismissOnClickOutside = false),
             title = { Text("행동통제") },
             text = { Text("출발 전에 필수 준비 말고 딴짓 안 했지?") },
             confirmButton = { TextButton(onClick = { actions.onSelfControlAnswered(dialog.date, true) }) { Text("응") } },

@@ -2,6 +2,7 @@ package com.chronoquest.app.home
 
 import com.chronoquest.app.notify.SettlementNotifier
 import com.chronoquest.core.data.QuestEntity
+import com.chronoquest.core.data.RecordSource
 import com.chronoquest.core.domain.RejectReason
 import com.chronoquest.core.domain.ScheduleProblem
 import com.chronoquest.core.domain.TodayQuest
@@ -11,7 +12,6 @@ import com.chronoquest.core.service.ScheduleResult
 import com.chronoquest.core.service.ScheduleService
 import com.chronoquest.rules.judge.ArrivalVerdict
 import com.chronoquest.rules.model.QuestStatus
-import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -29,34 +31,42 @@ import kotlinx.coroutines.withContext
  * 엔진 계산이 있으므로 [compute] 디스패처(기본 Default)에서 돈다(인계 메모 A2b "스레드").
  */
 class HomePresenter(
-    private val game: GameService,
-    private val schedule: ScheduleService,
-    private val clock: Clock,
+    game: () -> GameService,
+    schedule: () -> ScheduleService,
     private val notifier: SettlementNotifier,
     private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) {
+    // 서비스(칭호표 로딩 포함)는 compute 디스패처 안에서 처음 만든다.
+    private val game by lazy(game)
+    private val schedule by lazy(schedule)
+    private val refreshLock = Mutex()
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     /** 일정 생성 → 오늘 요약·정리 필요·대표 칭호·안 본 연출을 다시 읽는다. 앱 복귀와 1분 주기로 부른다. */
     suspend fun refresh() = withContext(compute) {
-        schedule.generateQuests()
-        val today = game.today()
-        val gameState = game.state()
-        val cleanup = game.needsCleanup()
-        val title = game.representativeTitle()
-        val celebrations = game.unseenCelebrations()
-        _state.update {
-            it.copy(
-                loading = false,
-                tier = gameState.tier,
-                xp = gameState.xp,
-                nextTierXp = gameState.nextTierXp,
-                representativeTitle = title,
-                quests = today.quests.map(::toCard),
-                cleanup = cleanup.map(::toCleanup),
-                celebrations = celebrations,
-            )
+        refreshLock.withLock {
+            schedule.generateQuests()
+            val today = game.today()
+            val gameState = game.state()
+            val cleanup = game.needsCleanup()
+            val title = game.representativeTitle()
+            val celebrations = game.unseenCelebrations()
+            // 행동통제는 답할 때까지 새로고침마다 다시 묻는다(창을 닫아도 그날 사라지지 않게).
+            val askSelfControl = today.day?.selfControl == null && today.quests.any { q -> q.record?.departedAt != null }
+            _state.update {
+                it.copy(
+                    loading = false,
+                    tier = gameState.tier,
+                    xp = gameState.xp,
+                    nextTierXp = gameState.nextTierXp,
+                    representativeTitle = title,
+                    quests = today.quests.map(::toCard),
+                    cleanup = cleanup.map(::toCleanup),
+                    celebrations = celebrations,
+                    dialog = if (askSelfControl && it.dialog == null) HomeDialog.AskSelfControl(today.date) else it.dialog,
+                )
+            }
         }
     }
 
@@ -125,7 +135,14 @@ class HomePresenter(
 
     suspend fun onArrivalEntered(dialog: HomeDialog.AddArrival, time: LocalTime, safe: Boolean) =
         withContext(compute) {
-            applyResult(game.editRecord(dialog.questId, null, dialog.date.atTime(time), safe), dialog)
+            val result = game.arrive(
+                dialog.questId,
+                safe,
+                at = dialog.date.atTime(time),
+                source = RecordSource.EDIT,
+                allowEarly = true,
+            )
+            applyResult(result, dialog)
         }
 
     suspend fun onCelebrationsSeen() = withContext(compute) {
@@ -160,7 +177,7 @@ class HomePresenter(
         when (val result = block()) {
             is ActionResult.ConfirmEarly -> {
                 // 기록이 있는 일정은 ScheduleService가 시각 변경을 거부하므로 [일정 수정]을 숨긴다.
-                val canReschedule = game.today().quests.firstOrNull { it.quest.id == questId }?.record == null
+                val canReschedule = game.today().quests.firstOrNull { it.quest.id == questId }?.let { it.record == null } ?: false
                 _state.update {
                     it.copy(dialog = HomeDialog.ConfirmEarly(questId, action, result.minutesEarly, canReschedule))
                 }
@@ -175,13 +192,7 @@ class HomePresenter(
                 if (result.xpGained != 0 || result.newCelebrations.isNotEmpty()) {
                     notifier.notify(result.xpGained, result.newCelebrations)
                 }
-                _state.update {
-                    if (result.askSelfControl) {
-                        it.copy(dialog = HomeDialog.AskSelfControl(LocalDate.now(clock)))
-                    } else {
-                        it.copy(dialog = closeIfOrigin(it.dialog, origin))
-                    }
-                }
+                _state.update { it.copy(dialog = closeIfOrigin(it.dialog, origin)) }
             }
             is ActionResult.Rejected -> _state.update {
                 it.copy(dialog = closeIfOrigin(it.dialog, origin), message = rejectText(result.reason))

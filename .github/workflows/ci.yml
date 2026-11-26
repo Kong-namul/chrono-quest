@@ -22,6 +22,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
+      - name: Design tokens are up to date
+        run: python3 tools/gen-tokens/gen_tokens.py && git diff --exit-code
       - name: Unit tests and debug build
         working-directory: android-core
         run: ./gradlew :rules:test :core:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug

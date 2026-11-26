@@ -45,7 +45,9 @@ A1(판정 엔진) 최종 리뷰와 태스크 리뷰에서 나왔지만 A1 범위
 > - 프로세스당 하나: `AppContainer`
 > - 시계: `SystemZoneClock`
 > - 쓰기 없이 바뀌는 상태: 앱이 보이는 동안 1분마다, 그리고 복귀할 때 새로고침
-> - 스레드: `HomePresenter`가 `Dispatchers.Default`에서 실행
+> - 스레드: HomePresenter가 Dispatchers.Default에서 실행, 서비스(칭호표 포함)도 그 안에서 처음 만든다
+> - 행동통제: 답하지 않으면 새로고침 때 다시 묻는다(바깥 눌러 닫기 막음)
+> - 정리 필요 [기록 추가]는 출발 기록을 지우지 않는다(arrive 경로)
 > - 확인 창: 30분 이상 이름, 일정 수정, 안전, 행동통제
 > - 음수 XP 알림, 기록 없음 정리 뒤 [출발] 숨김
 > - `allowBackup`
@@ -58,6 +60,23 @@ A1(판정 엔진) 최종 리뷰와 태스크 리뷰에서 나왔지만 A1 범위
 > - 취소·휴가 되돌리기 정책
 > - 폰 설치(USB 준비되면)
 > - 갤럭시 Z 플립5 커버 화면 위젯 아이디어
+> - 실기기 확인: 상태바·내비게이션 바 아이콘 색(edge-to-edge), 알림 권한 요청, 알림 눌러 앱 열기
+> - `representativeTitle()`이 1분마다 쓰기 잠금을 잡는다. 잠금 없이 먼저 판단하게 고치기
+> - `ScheduleService.reschedule`의 지난 시각·시즌 이전 검증
+> - `viewModelScope.launch` 오류 처리(예외 시 메시지, 첫 새로고침 실패 시 loading 고착)
+> - 휴가일 일정 카드에 버튼이 보임(`RecordPolicy`도 휴가일 기록을 막지 않음). 휴가 화면과 함께 처리
+> - `loading` 상태를 화면에 그리지 않음
+> - 기록 추가 창 기본 시각을 예정 시각으로
+> - 버튼 연타 시 거부 메시지가 뜸(진행 중 막기)
+> - `onCelebrationsSeen`이 화면에 보인 키가 아니라 상태의 키를 본 것으로 표시
+> - 앱 아이콘(런처) 에셋
+> - 서명된 릴리스 빌드(R8)
+> - 디자인 확인 필요(사용자):
+>   - SILVER/PLATINUM/MYTHIC 배지 흰 글자 대비 약 3:1
+>   - "티어 승급: SILVER"처럼 enum 이름이 보이는 문구
+>   - Material 기본 tertiary·error 색 역할(에러 색 토큰은 사용자 승인 필요)
+>   - 줄 간격 토큰 여부
+> - 화면 사진 검증(verifyRoborazzi)을 CI에서 돌리려면 같은 OS 렌더링이나 허용 오차가 필요
 
 - **프로세스당 하나**: `ChronoDatabase`(이제 `build()`가 싱글턴), `TitleCatalog`, `Engine`, `GameService`, `ScheduleService`를 앱 컨테이너 하나에서만 꺼내 쓴다. 알림 리시버(`goAsync`)와 워커도 마찬가지다. 앱 코드가 DAO로 직접 써서 `RecordPolicy`를 우회하지 않게 한다.
 - **시계**: 생성할 때 받은 `Clock`은 타임존이 고정된다. 호출할 때마다 `ZoneId.systemDefault()`를 읽는 Clock을 쓰거나, `ACTION_TIMEZONE_CHANGED`/`TIME_SET` 때 다시 만든다(스펙 10).

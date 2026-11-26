@@ -41,7 +41,7 @@ class HomeViewModel(private val presenter: HomePresenter) : ViewModel() {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 HomeViewModel(
-                    HomePresenter(container.gameService, container.scheduleService, container.clock, container.notifier),
+                    HomePresenter({ container.gameService }, { container.scheduleService }, container.notifier),
                 )
             }
         }

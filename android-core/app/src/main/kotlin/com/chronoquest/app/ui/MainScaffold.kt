@@ -12,6 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +40,13 @@ fun ChronoScaffold(selectedTab: MainTab, onTabSelected: (MainTab) -> Unit, conte
                         onClick = { onTabSelected(tab) },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = ChronoTokens.Colors.Blue500,
+                            selectedTextColor = ChronoTokens.Colors.Blue500,
+                            indicatorColor = ChronoTokens.Colors.Blue50,
+                            unselectedIconColor = ChronoTokens.Colors.Text2,
+                            unselectedTextColor = ChronoTokens.Colors.Text2,
+                        ),
                     )
                 }
             }

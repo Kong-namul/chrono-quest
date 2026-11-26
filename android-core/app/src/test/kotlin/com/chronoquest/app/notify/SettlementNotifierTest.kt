@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.chronoquest.app.MainActivity
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.domain.CelebrationKind
 import kotlin.test.assertEquals
@@ -41,6 +42,10 @@ class SettlementNotifierTest {
         assertTrue("새 칭호: 최초의 각성" in text)
         assertTrue("새 칭호: 운명의 첫걸음" in text)
         assertEquals(AndroidSettlementNotifier.CHANNEL_ID, notification.channelId)
+        assertEquals(
+            MainActivity::class.java.name,
+            shadowOf(notification.contentIntent).savedIntent.component?.className,
+        )
     }
 
     @Test

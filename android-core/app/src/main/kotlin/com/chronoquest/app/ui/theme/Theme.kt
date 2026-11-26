@@ -14,7 +14,7 @@ import com.chronoquest.rules.model.Tier
 /** 앱 글꼴. Pretendard(Task 7)를 넣기 전까지는 기기 기본 글꼴이다. */
 val ChronoFont: FontFamily = FontFamily.Default
 
-private val LightColors = lightColorScheme(
+internal val ChronoColorScheme = lightColorScheme(
     primary = ChronoTokens.Colors.Blue500,
     onPrimary = ChronoTokens.Colors.Bg1,
     primaryContainer = ChronoTokens.Colors.Blue50,
@@ -31,6 +31,14 @@ private val LightColors = lightColorScheme(
     onSurfaceVariant = ChronoTokens.Colors.Text2,
     outline = ChronoTokens.Colors.Border,
     outlineVariant = ChronoTokens.Colors.Border,
+    surfaceTint = ChronoTokens.Colors.Bg1,
+    surfaceBright = ChronoTokens.Colors.Bg1,
+    surfaceDim = ChronoTokens.Colors.Bg2,
+    surfaceContainerLowest = ChronoTokens.Colors.Bg1,
+    surfaceContainerLow = ChronoTokens.Colors.Bg1,
+    surfaceContainer = ChronoTokens.Colors.Bg2,
+    surfaceContainerHigh = ChronoTokens.Colors.Bg1,
+    surfaceContainerHighest = ChronoTokens.Colors.Bg2,
 )
 
 private fun style(size: TextUnit, weight: FontWeight = FontWeight.Normal) =
@@ -57,7 +65,7 @@ private val ChronoTypography = Typography(
 
 @Composable
 fun ChronoTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = LightColors, typography = ChronoTypography, content = content)
+    MaterialTheme(colorScheme = ChronoColorScheme, typography = ChronoTypography, content = content)
 }
 
 /** 티어 엠블럼·배지 색. 토큰에만 있는 값을 쓴다. */

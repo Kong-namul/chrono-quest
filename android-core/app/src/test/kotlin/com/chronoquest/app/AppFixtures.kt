@@ -15,8 +15,8 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
-/** 갤럭시 Z 플립5 안쪽 화면(1080×2640 px, 약 425 ppi)에 맞춘 Robolectric qualifiers. */
-const val FLIP5 = "w411dp-h1006dp-420dpi"
+/** 갤럭시 Z 플립5 안쪽 화면(1080×2640 px, 약 425 ppi)에 맞춘 Robolectric qualifiers. 한국어 폰 기준. */
+const val FLIP5 = "ko-rKR-w411dp-h1006dp-420dpi"
 
 val SEOUL: ZoneId = ZoneId.of("Asia/Seoul")
 

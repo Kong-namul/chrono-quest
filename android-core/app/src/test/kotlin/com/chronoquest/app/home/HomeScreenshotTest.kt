@@ -54,6 +54,10 @@ private object Samples {
 
     val confirmEarly = inProgress.copy(dialog = HomeDialog.ConfirmEarly("o", PendingAction.Arrive(true), 45))
 
+    val confirmEarlyLocked = inProgress.copy(
+        dialog = HomeDialog.ConfirmEarly("o", PendingAction.Arrive(true), 45, canReschedule = false),
+    )
+
     val reschedule = inProgress.copy(
         dialog = HomeDialog.Reschedule("o", PendingAction.Arrive(true), LocalTime.of(14, 0), LocalTime.of(13, 20)),
     )
@@ -93,4 +97,7 @@ class HomeScreenshotTest {
 
     @Test
     fun `일정 시각 변경 창`() = shoot("home_reschedule", Samples.reschedule)
+
+    @Test
+    fun `일정 수정이 막힌 이른 기록 확인 창`() = shoot("home_confirm_early_locked", Samples.confirmEarlyLocked)
 }

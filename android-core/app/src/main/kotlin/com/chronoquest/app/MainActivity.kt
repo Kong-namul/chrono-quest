@@ -3,11 +3,74 @@ package com.chronoquest.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chronoquest.app.home.HomeActions
+import com.chronoquest.app.home.HomeScreen
+import com.chronoquest.app.home.HomeViewModel
+import com.chronoquest.app.ui.ChronoScaffold
+import com.chronoquest.app.ui.ComingSoon
+import com.chronoquest.app.ui.MainTab
+import com.chronoquest.app.ui.theme.ChronoTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { Text("크로노 퀘스트") }
+        val container = (application as ChronoApp).container
+        setContent {
+            ChronoTheme {
+                val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(container))
+                ChronoMainScreen(homeViewModel)
+            }
+        }
     }
 }
+
+/** 앱이 보이는 동안 1분마다 새로고침한다(시간이 지나서 생기는 보류·보너스를 반영, 인계 메모 A2b). */
+@Composable
+fun ChronoMainScreen(viewModel: HomeViewModel) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableStateOf(MainTab.HOME) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                viewModel.refresh()
+                delay(60_000)
+            }
+        }
+    }
+    ChronoScaffold(selectedTab = tab, onTabSelected = { tab = it }) {
+        when (tab) {
+            MainTab.HOME -> HomeScreen(state = state, actions = homeActions(viewModel))
+            else -> ComingSoon(tab)
+        }
+    }
+}
+
+private fun homeActions(vm: HomeViewModel) = HomeActions(
+    onDepart = vm::onDepart,
+    onArrive = vm::onArrive,
+    onSafetyAnswered = vm::onSafetyAnswered,
+    onRecordAnyway = vm::onRecordAnyway,
+    onEditSchedule = vm::onEditSchedule,
+    onRescheduleConfirmed = vm::onRescheduleConfirmed,
+    onSelfControlAnswered = vm::onSelfControlAnswered,
+    onCleanupLate = vm::onCleanupLate,
+    onCleanupCancel = vm::onCleanupCancel,
+    onCleanupAddArrival = vm::onCleanupAddArrival,
+    onArrivalEntered = vm::onArrivalEntered,
+    onDismissDialog = vm::dismissDialog,
+    onDismissMessage = vm::dismissMessage,
+    onCelebrationsSeen = vm::onCelebrationsSeen,
+)

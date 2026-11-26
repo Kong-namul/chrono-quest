@@ -38,7 +38,24 @@ object ChronoTokens {
     }
 
     object Tier {
+        val Bronze = Color(0xFFB8733A)
+        val Silver = Color(0xFF8E95A3)
+        val Gold = Color(0xFFE8B530)
+        val Platinum = Color(0xFF2FA89C)
+        val Diamond = Color(0xFF3C8DDE)
+        val Master = Color(0xFF8A4FD8)
+        val Legend = Color(0xFFD64550)
+        val Mythic = Color(0xFFF07A1A)
+
         val all: Map<String, Color> = mapOf(
+            "BRONZE" to Bronze,
+            "SILVER" to Silver,
+            "GOLD" to Gold,
+            "PLATINUM" to Platinum,
+            "DIAMOND" to Diamond,
+            "MASTER" to Master,
+            "LEGEND" to Legend,
+            "MYTHIC" to Mythic,
         )
     }
 

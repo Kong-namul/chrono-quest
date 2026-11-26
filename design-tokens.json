@@ -13,7 +13,16 @@
     "yellow.400": "#FFD54A",
     "yellow.50": "#FFF3C4"
   },
-  "tier": {},
+  "tier": {
+    "BRONZE": "#B8733A",
+    "SILVER": "#8E95A3",
+    "GOLD": "#E8B530",
+    "PLATINUM": "#2FA89C",
+    "DIAMOND": "#3C8DDE",
+    "MASTER": "#8A4FD8",
+    "LEGEND": "#D64550",
+    "MYTHIC": "#F07A1A"
+  },
   "typeScale": [72, 48, 32, 24, 22, 18, 14],
   "space": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
   "radius": { "sm": 8, "md": 12, "lg": 16 },

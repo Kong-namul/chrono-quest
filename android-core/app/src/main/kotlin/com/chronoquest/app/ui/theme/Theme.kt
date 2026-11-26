@@ -4,10 +4,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
+import com.chronoquest.rules.model.Tier
 
 /** 앱 글꼴. Pretendard(Task 7)를 넣기 전까지는 기기 기본 글꼴이다. */
 val ChronoFont: FontFamily = FontFamily.Default
@@ -57,3 +59,10 @@ private val ChronoTypography = Typography(
 fun ChronoTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = LightColors, typography = ChronoTypography, content = content)
 }
+
+/** 티어 엠블럼·배지 색. 토큰에만 있는 값을 쓴다. */
+fun tierColor(tier: Tier): Color = ChronoTokens.Tier.all.getValue(tier.name)
+
+/** 티어 배지 위 글자색. 밝은 골드만 어두운 글자를 쓴다. */
+fun onTierColor(tier: Tier): Color =
+    if (tier == Tier.GOLD) ChronoTokens.Colors.Text1 else ChronoTokens.Colors.Bg1

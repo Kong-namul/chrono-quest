@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "chrono-core"
-include(":rules")
+include(":rules", ":core")

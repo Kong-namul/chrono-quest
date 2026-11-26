@@ -1,6 +1,7 @@
 package com.chronoquest.app
 
 import android.content.Context
+import com.chronoquest.app.notify.SettlementNotifier
 import com.chronoquest.core.data.ChronoDatabase
 import com.chronoquest.core.service.GameService
 import com.chronoquest.core.service.ScheduleService
@@ -21,4 +22,5 @@ class AppContainer(context: Context) {
     val engine: Engine by lazy { Engine(catalog) }
     val gameService: GameService by lazy { GameService(database, clock, catalog, engine) }
     val scheduleService: ScheduleService by lazy { ScheduleService(database, clock) }
+    val notifier: SettlementNotifier by lazy { SettlementNotifier.None }
 }

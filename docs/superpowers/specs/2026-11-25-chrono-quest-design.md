@@ -413,7 +413,7 @@ Unity에서 네이티브 화면은 `bridge.openNative(screen)`으로 연다. 닫
 ## 9. 디자인 토큰
 
 - **원본**: 루트의 `design-tokens.json`. 화면 코드에 색·크기를 하드코딩하지 않는다.
-- **생성**: `tools/gen-tokens`가 `unity/.../Tokens.uss`(UI Toolkit 변수)와 `android-core/core/.../Tokens.kt`(Compose)를 만든다. 생성 파일은 직접 수정하지 않는다.
+- **생성**: `tools/gen-tokens`가 `android-core/app/.../ui/theme/Tokens.kt`(Compose)를 만들고, Phase B에서 `unity/.../Tokens.uss`(UI Toolkit 변수)도 만든다. 생성 파일은 직접 수정하지 않는다.
 - **색 (초안, 사용자가 본 시안 기준)**
 
 | 토큰 | 값 | 용도 |

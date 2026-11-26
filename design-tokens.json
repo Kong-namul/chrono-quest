@@ -1,0 +1,21 @@
+{
+  "color": {
+    "bg.1": "#FFFFFF",
+    "bg.2": "#F7F8FC",
+    "text.1": "#1A1C24",
+    "text.2": "#6A6D7A",
+    "border": "#E6E8F0",
+    "blue.500": "#2F6FED",
+    "blue.700": "#1F55C4",
+    "blue.50": "#EAF1FE",
+    "gold.500": "#E8B530",
+    "gold.700": "#B8861B",
+    "yellow.400": "#FFD54A",
+    "yellow.50": "#FFF3C4"
+  },
+  "tier": {},
+  "typeScale": [72, 48, 32, 24, 22, 18, 14],
+  "space": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "radius": { "sm": 8, "md": 12, "lg": 16 },
+  "font": "Pretendard"
+}

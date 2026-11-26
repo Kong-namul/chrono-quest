@@ -77,6 +77,12 @@ A1(판정 엔진) 최종 리뷰와 태스크 리뷰에서 나왔지만 A1 범위
 >   - Material 기본 tertiary·error 색 역할(에러 색 토큰은 사용자 승인 필요)
 >   - 줄 간격 토큰 여부
 > - 화면 사진 검증(verifyRoborazzi)을 CI에서 돌리려면 같은 OS 렌더링이나 허용 오차가 필요
+> - 행동통제 질문이 답한 직후 한 번 더 뜰 수 있음(드묾). 규칙이 거짓이면 오늘 날짜의 AskSelfControl 창을 닫기
+> - 서비스 지연 생성(공급자) 테스트: 생성 직후엔 안 부르고 첫 새로고침 때 한 번 부르는지
+> - Android 8.0(API 26)에서 내비게이션 바 아이콘 대비(`SystemBarStyle.light`의 darkScrim)
+> - 관찰: 지금은 presenter StateFlow + 쓰기 뒤·1분 새로고침. Room 무효화 관찰이 필요한지 판단
+> - 티어·펫·보스 연출 키를 다시 띄우지 않는 정책 문서화, `ChronoDatabase.build()` 이름 검토
+> - 펫·이번 주 보스를 임시 홈에 카드로 보여줄지(사용자 결정 대기, 2026-11-26 질문)
 
 - **프로세스당 하나**: `ChronoDatabase`(이제 `build()`가 싱글턴), `TitleCatalog`, `Engine`, `GameService`, `ScheduleService`를 앱 컨테이너 하나에서만 꺼내 쓴다. 알림 리시버(`goAsync`)와 워커도 마찬가지다. 앱 코드가 DAO로 직접 써서 `RecordPolicy`를 우회하지 않게 한다.
 - **시계**: 생성할 때 받은 `Clock`은 타임존이 고정된다. 호출할 때마다 `ZoneId.systemDefault()`를 읽는 Clock을 쓰거나, `ACTION_TIMEZONE_CHANGED`/`TIME_SET` 때 다시 만든다(스펙 10).

@@ -6,13 +6,19 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
+import com.chronoquest.app.R
 import com.chronoquest.rules.model.Tier
 
-/** 앱 글꼴. Pretendard(Task 7)를 넣기 전까지는 기기 기본 글꼴이다. */
-val ChronoFont: FontFamily = FontFamily.Default
+/** 앱 글꼴 Pretendard (OFL, ASSETS.md). */
+val ChronoFont: FontFamily = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_bold, FontWeight.Bold),
+)
 
 internal val ChronoColorScheme = lightColorScheme(
     primary = ChronoTokens.Colors.Blue500,

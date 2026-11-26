@@ -31,7 +31,7 @@ sealed interface PendingAction {
 
 sealed interface HomeDialog {
     data class AskSafety(val questId: String) : HomeDialog
-    data class ConfirmEarly(val questId: String, val action: PendingAction, val minutesEarly: Long) : HomeDialog
+    data class ConfirmEarly(val questId: String, val action: PendingAction, val minutesEarly: Long, val canReschedule: Boolean = true) : HomeDialog
     data class Reschedule(val questId: String, val action: PendingAction, val due: LocalTime, val depart: LocalTime) : HomeDialog
     data class AskSelfControl(val date: LocalDate) : HomeDialog
     data class AddArrival(val questId: String, val date: LocalDate) : HomeDialog

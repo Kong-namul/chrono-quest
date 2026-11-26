@@ -61,7 +61,7 @@ class HomePresenter(
     }
 
     suspend fun onDepart(questId: String) = withContext(compute) {
-        handle(questId, PendingAction.Depart) { game.depart(questId) }
+        handle(questId, PendingAction.Depart, origin = null) { game.depart(questId) }
     }
 
     /** 도착은 먼저 안전 여부를 묻는다(스펙 6.2). */
@@ -70,14 +70,15 @@ class HomePresenter(
     }
 
     suspend fun onSafetyAnswered(questId: String, safe: Boolean) = withContext(compute) {
-        handle(questId, PendingAction.Arrive(safe)) { game.arrive(questId, safe) }
+        handle(questId, PendingAction.Arrive(safe), origin = HomeDialog.AskSafety(questId)) { game.arrive(questId, safe) }
     }
 
     suspend fun onRecordAnyway(dialog: HomeDialog.ConfirmEarly) = withContext(compute) {
-        handle(dialog.questId, dialog.action) { perform(dialog.questId, dialog.action, allowEarly = true) }
+        handle(dialog.questId, dialog.action, origin = dialog) { perform(dialog.questId, dialog.action, allowEarly = true) }
     }
 
     suspend fun onEditScheduleRequested(dialog: HomeDialog.ConfirmEarly) = withContext(compute) {
+        if (!dialog.canReschedule) return@withContext
         val quest = game.today().quests.firstOrNull { it.quest.id == dialog.questId }?.quest
         if (quest == null) {
             _state.update { it.copy(dialog = null, message = NOT_FOUND_TEXT) }
@@ -99,22 +100,22 @@ class HomePresenter(
         withContext(compute) {
             when (val result = schedule.reschedule(dialog.questId, due, depart)) {
                 is ScheduleResult.Saved ->
-                    handle(result.id, dialog.action) { perform(result.id, dialog.action, allowEarly = false) }
+                    handle(result.id, dialog.action, origin = dialog) { perform(result.id, dialog.action, allowEarly = false) }
                 is ScheduleResult.Rejected ->
-                    _state.update { it.copy(dialog = null, message = problemText(result.problems)) }
+                    _state.update { it.copy(message = problemText(result.problems)) }
             }
         }
 
     suspend fun onSelfControlAnswered(date: LocalDate, value: Boolean) = withContext(compute) {
-        applyResult(game.answerSelfControl(date, value))
+        applyResult(game.answerSelfControl(date, value), HomeDialog.AskSelfControl(date))
     }
 
     suspend fun onCleanupLate(questId: String) = withContext(compute) {
-        applyResult(game.resolveNoRecord(questId))
+        applyResult(game.resolveNoRecord(questId), origin = null)
     }
 
     suspend fun onCleanupCancel(questId: String) = withContext(compute) {
-        applyResult(game.cancelQuest(questId))
+        applyResult(game.cancelQuest(questId), origin = null)
     }
 
     fun onCleanupAddArrival(questId: String) {
@@ -124,7 +125,7 @@ class HomePresenter(
 
     suspend fun onArrivalEntered(dialog: HomeDialog.AddArrival, time: LocalTime, safe: Boolean) =
         withContext(compute) {
-            applyResult(game.editRecord(dialog.questId, null, dialog.date.atTime(time), safe))
+            applyResult(game.editRecord(dialog.questId, null, dialog.date.atTime(time), safe), dialog)
         }
 
     suspend fun onCelebrationsSeen() = withContext(compute) {
@@ -146,31 +147,55 @@ class HomePresenter(
             is PendingAction.Arrive -> game.arrive(questId, action.safe, allowEarly = allowEarly)
         }
 
-    /** 30분 이상 이르면 확인 창을 띄우고, 아니면 결과를 반영한다. */
-    private suspend fun handle(questId: String, action: PendingAction, block: suspend () -> ActionResult) {
+    /**
+     * 30분 이상 이르면 확인 창을 띄우고, 아니면 결과를 반영한다.
+     * [origin]은 이 동작을 시작한 창(카드 버튼이면 null). 결과가 거부여도 다른 동작이 연 창은 닫지 않는다.
+     */
+    private suspend fun handle(
+        questId: String,
+        action: PendingAction,
+        origin: HomeDialog?,
+        block: suspend () -> ActionResult,
+    ) {
         when (val result = block()) {
-            is ActionResult.ConfirmEarly -> _state.update {
-                it.copy(dialog = HomeDialog.ConfirmEarly(questId, action, result.minutesEarly))
+            is ActionResult.ConfirmEarly -> {
+                // 기록이 있는 일정은 ScheduleService가 시각 변경을 거부하므로 [일정 수정]을 숨긴다.
+                val canReschedule = game.today().quests.firstOrNull { it.quest.id == questId }?.record == null
+                _state.update {
+                    it.copy(dialog = HomeDialog.ConfirmEarly(questId, action, result.minutesEarly, canReschedule))
+                }
             }
-            else -> applyResult(result)
+            else -> applyResult(result, origin)
         }
     }
 
-    private suspend fun applyResult(result: ActionResult) {
+    private suspend fun applyResult(result: ActionResult, origin: HomeDialog?) {
         when (result) {
             is ActionResult.Done -> {
                 if (result.xpGained != 0 || result.newCelebrations.isNotEmpty()) {
                     notifier.notify(result.xpGained, result.newCelebrations)
                 }
-                val next = if (result.askSelfControl) HomeDialog.AskSelfControl(LocalDate.now(clock)) else null
-                _state.update { it.copy(dialog = next) }
+                _state.update {
+                    if (result.askSelfControl) {
+                        it.copy(dialog = HomeDialog.AskSelfControl(LocalDate.now(clock)))
+                    } else {
+                        it.copy(dialog = closeIfOrigin(it.dialog, origin))
+                    }
+                }
             }
-            is ActionResult.Rejected -> _state.update { it.copy(dialog = null, message = rejectText(result.reason)) }
-            is ActionResult.ConfirmEarly -> _state.update { it.copy(dialog = null) }
-            ActionResult.NotFound -> _state.update { it.copy(dialog = null, message = NOT_FOUND_TEXT) }
+            is ActionResult.Rejected -> _state.update {
+                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = rejectText(result.reason))
+            }
+            is ActionResult.ConfirmEarly -> _state.update { it.copy(dialog = closeIfOrigin(it.dialog, origin)) }
+            ActionResult.NotFound -> _state.update {
+                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = NOT_FOUND_TEXT)
+            }
         }
         refresh()
     }
+
+    private fun closeIfOrigin(current: HomeDialog?, origin: HomeDialog?): HomeDialog? =
+        if (current == origin) null else current
 
     private fun toCard(item: TodayQuest): QuestCard {
         val status = when {

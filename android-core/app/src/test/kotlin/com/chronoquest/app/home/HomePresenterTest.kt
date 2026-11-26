@@ -109,6 +109,7 @@ class HomePresenterTest {
         assertEquals(other.id, dialog.questId)
         assertEquals(605L, dialog.minutesEarly)
         assertEquals(PendingAction.Arrive(true), dialog.action)
+        assertTrue(dialog.canReschedule)
         presenter.onRecordAnyway(dialog)
         assertNull(state.dialog)
         assertEquals(CardStatus.EARLY, card(other.id).status)
@@ -137,6 +138,7 @@ class HomePresenterTest {
         presenter.onCleanupLate(work.id)
         assertTrue(state.cleanup.isEmpty())
         assertEquals(CardStatus.LATE, card(work.id).status)
+        assertFalse(card(work.id).canDepart)
     }
 
     @Test
@@ -179,5 +181,47 @@ class HomePresenterTest {
         assertTrue(state.celebrations.isEmpty())
         presenter.refresh()
         assertTrue(state.celebrations.isEmpty())
+    }
+
+    @Test
+    fun `출발 기록이 있으면 일정 수정을 막는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.dismissDialog()
+        presenter.onSafetyAnswered(work.id, true)
+        val dialog = state.dialog as HomeDialog.ConfirmEarly
+        assertFalse(dialog.canReschedule)
+    }
+
+    @Test
+    fun `일정 변경이 거부되면 창을 유지하고 이유를 알려준다`() = runTest {
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(other.id, true)
+        presenter.onEditScheduleRequested(state.dialog as HomeDialog.ConfirmEarly)
+        val reschedule = state.dialog as HomeDialog.Reschedule
+        presenter.onRescheduleConfirmed(reschedule, LocalTime.parse("09:10"), LocalTime.parse("09:20"))
+        assertEquals(reschedule, state.dialog)
+        assertEquals("출발 시각이 도착 시각보다 늦어.", state.message)
+    }
+
+    @Test
+    fun `출발을 두 번 눌러도 행동통제 창은 남는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.onDepart(work.id)
+        assertEquals(HomeDialog.AskSelfControl(d("2026-11-30")), state.dialog)
+        assertEquals("이미 기록했어.", state.message)
+    }
+
+    @Test
+    fun `XP가 줄면 음수로 알리고 변화가 없으면 알리지 않는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(work.id, true)
+        val before = notified.size
+        presenter.onCleanupCancel(work.id)
+        assertEquals(before + 1, notified.size)
+        assertEquals(-20, notified.last().first)
+        presenter.onCleanupCancel(other.id)
+        assertEquals(before + 1, notified.size)
     }
 }

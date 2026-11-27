@@ -93,6 +93,9 @@ interface VacationDao {
 
     @Query("DELETE FROM vacation WHERE date = :date")
     suspend fun remove(date: LocalDate)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM vacation WHERE date = :date)")
+    suspend fun isVacation(date: LocalDate): Boolean
 }
 
 @Dao

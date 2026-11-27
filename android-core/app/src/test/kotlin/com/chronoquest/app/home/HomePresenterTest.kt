@@ -214,15 +214,17 @@ class HomePresenterTest {
     }
 
     @Test
-    fun `XP가 줄면 음수로 알리고 변화가 없으면 알리지 않는다`() = runTest {
+    fun `기록이 있는 일정은 취소하지 못하고 XP 변화가 없으면 알리지 않는다`() = runTest {
         clock.now = dt("2026-11-30", "08:55")
         presenter.onSafetyAnswered(work.id, true)
         val before = notified.size
         presenter.onCleanupCancel(work.id)
-        assertEquals(before + 1, notified.size)
-        assertEquals(-20, notified.last().first)
+        assertEquals("기록이 있는 일정은 취소할 수 없어.", state.message)
+        assertEquals(CardStatus.ON_TIME, card(work.id).status)
+        presenter.dismissMessage()
         presenter.onCleanupCancel(other.id)
-        assertEquals(before + 1, notified.size)
+        assertEquals(before, notified.size)
+        assertEquals(CardStatus.CANCELED, card(other.id).status)
     }
 
     @Test

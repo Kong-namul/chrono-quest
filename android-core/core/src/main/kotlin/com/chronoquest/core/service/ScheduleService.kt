@@ -6,6 +6,7 @@ import com.chronoquest.core.data.QuestEntity
 import com.chronoquest.core.data.QuestSource
 import com.chronoquest.core.data.ScheduleTemplateEntity
 import com.chronoquest.core.data.VacationEntity
+import com.chronoquest.core.domain.DayActivity
 import com.chronoquest.core.domain.QuestGenerator
 import com.chronoquest.core.domain.QuestIds
 import com.chronoquest.core.domain.ScheduleProblem
@@ -133,9 +134,36 @@ class ScheduleService(
 
     suspend fun vacations(): List<LocalDate> = db.vacationDao().all().map { it.date }
 
-    suspend fun setVacation(date: LocalDate, on: Boolean) {
+    /**
+     * 휴가 켜기·끄기 (스펙 6.4, D13).
+     * - 오늘과 그 뒤 날짜는 켜고 끌 수 있다. 단, 그날 기록이 있으면 켤 수 없다(그날 출근 XP가 빠지므로).
+     * - 지난 날짜는 그날 활동이 전혀 없을 때만 켤 수 있다(깜빡한 휴가). 끌 수는 없다.
+     * - 시즌 시작 전 날짜는 안 된다.
+     */
+    suspend fun setVacation(date: LocalDate, on: Boolean): ScheduleResult = db.withTransaction {
+        val problem = when {
+            date.isBefore(ledgers.settings().seasonStart) -> ScheduleProblem.BEFORE_SEASON
+            !on && date.isBefore(clock.today()) -> ScheduleProblem.PAST_DATE
+            on && hasActivity(date) -> ScheduleProblem.DAY_HAS_RECORD
+            else -> null
+        }
+        if (problem != null) return@withTransaction ScheduleResult.Rejected(listOf(problem))
         if (on) db.vacationDao().add(VacationEntity(date)) else db.vacationDao().remove(date)
+        ScheduleResult.Saved(date.toString())
     }
+
+    /** 홈 "정리 필요"의 [휴가였어] 대상인지 본다. 지난 날이고, 아직 휴가가 아니고, 그날 활동이 전혀 없어야 한다. */
+    suspend fun canMarkMissedVacation(date: LocalDate): Boolean = db.withTransaction {
+        date.isBefore(clock.today()) &&
+            !date.isBefore(ledgers.settings().seasonStart) &&
+            !db.vacationDao().isVacation(date) &&
+            !hasActivity(date)
+    }
+
+    /** 그날 일정 기록이나 하루 기록이 하나라도 있는지 본다. */
+    private suspend fun hasActivity(date: LocalDate): Boolean =
+        DayActivity.hasDayRecord(db.dayDao().get(date)) ||
+            db.questDao().onDate(date).any { DayActivity.hasRecord(db.recordDao().get(it.id)) }
 
     private suspend fun dropFutureUnrecorded(templateId: Long) {
         val ids = db.questDao().unrecordedFutureIds(templateId, clock.nowLocal())

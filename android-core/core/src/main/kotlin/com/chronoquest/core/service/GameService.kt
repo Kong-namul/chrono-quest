@@ -10,6 +10,7 @@ import com.chronoquest.core.data.RecordSource
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.domain.Celebrations
 import com.chronoquest.core.domain.CleanupFilter
+import com.chronoquest.core.domain.DayActivity
 import com.chronoquest.core.domain.RecordPolicy
 import com.chronoquest.core.domain.RecordResult
 import com.chronoquest.core.domain.RejectReason
@@ -18,6 +19,7 @@ import com.chronoquest.core.domain.Today
 import com.chronoquest.core.domain.TodaySummary
 import com.chronoquest.rules.engine.Engine
 import com.chronoquest.rules.engine.GameState
+import com.chronoquest.rules.model.QuestKind
 import com.chronoquest.rules.model.QuestStatus
 import com.chronoquest.rules.titles.TitleCatalog
 import java.time.Clock
@@ -97,10 +99,26 @@ class GameService(
         recordAction(questId, now) { quest, current -> RecordPolicy.resolveNoRecord(quest, current, now) }
     }
 
-    /** 불가피한 취소(스펙 6.4). 판정에서 빠진다. */
+    /**
+     * 불가피한 취소(스펙 6.4, D13). 판정에서 빠진다.
+     * 기록(출발·도착·기록 없음 정리)이 있는 일정은 취소할 수 없다. 실수로 XP를 날리지 않게 하려는 것이다.
+     * 기록 없는 지난 일정은 홈 "정리 필요"에서 취소할 수 있다.
+     */
     suspend fun cancelQuest(questId: String): ActionResult = write { now ->
         val quest = db.questDao().get(questId) ?: return@write ActionResult.NotFound
+        if (quest.status == QuestStatus.CANCELED) return@write ActionResult.Rejected(RejectReason.QUEST_CANCELED)
+        if (DayActivity.hasRecord(db.recordDao().get(questId))) {
+            return@write ActionResult.Rejected(RejectReason.HAS_RECORD)
+        }
         applyChange(now) { db.questDao().update(quest.copy(status = QuestStatus.CANCELED)) }
+    }
+
+    /** 취소 되돌리기. 오늘과 그 뒤 일정만 된다(스펙 D13). */
+    suspend fun restoreQuest(questId: String): ActionResult = write { now ->
+        val quest = db.questDao().get(questId) ?: return@write ActionResult.NotFound
+        if (quest.status != QuestStatus.CANCELED) return@write ActionResult.Rejected(RejectReason.NOT_CANCELED)
+        if (quest.date.isBefore(now.toLocalDate())) return@write ActionResult.Rejected(RejectReason.PAST_DATE)
+        applyChange(now) { db.questDao().update(quest.copy(status = QuestStatus.SCHEDULED)) }
     }
 
     /** 행동통제 답. 오늘 이후 날짜는 미리 답할 수 없다. */
@@ -177,6 +195,10 @@ class GameService(
         decide: (QuestEntity, QuestRecordEntity?) -> RecordResult,
     ): ActionResult {
         val quest = db.questDao().get(questId) ?: return ActionResult.NotFound
+        // 엔진은 휴가일의 출근을 판정에서 빼므로, 그날 출근은 기록 자체를 받지 않는다.
+        if (quest.kind == QuestKind.WORK && db.vacationDao().isVacation(quest.date)) {
+            return ActionResult.Rejected(RejectReason.ON_VACATION)
+        }
         return when (val result = decide(quest, db.recordDao().get(questId))) {
             is RecordResult.Rejected -> ActionResult.Rejected(result.reason)
             is RecordResult.NeedsEarlyConfirmation -> ActionResult.ConfirmEarly(result.minutesEarly)

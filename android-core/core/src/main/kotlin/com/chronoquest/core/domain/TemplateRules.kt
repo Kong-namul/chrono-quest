@@ -4,7 +4,19 @@ import com.chronoquest.core.data.ScheduleTemplateEntity
 import java.time.DayOfWeek
 import java.time.LocalTime
 
-enum class ScheduleProblem { BLANK_TITLE, NO_DAYS, DEPART_AFTER_DUE, DUPLICATE, BEFORE_SEASON, NOT_FOUND, HAS_RECORD }
+enum class ScheduleProblem {
+    BLANK_TITLE,
+    NO_DAYS,
+    DEPART_AFTER_DUE,
+    DUPLICATE,
+    BEFORE_SEASON,
+    NOT_FOUND,
+    HAS_RECORD,
+    /** 지난 날짜라 바꿀 수 없다(스펙 D13). */
+    PAST_DATE,
+    /** 그날 기록이 있어서 휴가로 바꿀 수 없다(스펙 D13). */
+    DAY_HAS_RECORD,
+}
 
 /** 반복 템플릿과 단발 일정의 입력 검증, 요일 마스크(월 bit0 ~ 일 bit6). */
 object TemplateRules {

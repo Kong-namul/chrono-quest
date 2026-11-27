@@ -5,12 +5,14 @@ import com.chronoquest.core.clockAt
 import com.chronoquest.core.d
 import com.chronoquest.core.data.ChronoDatabase
 import com.chronoquest.core.data.RecordSource
+import com.chronoquest.core.data.VacationEntity
 import com.chronoquest.core.domain.RejectReason
 import com.chronoquest.core.dt
 import com.chronoquest.core.inMemoryDb
 import com.chronoquest.core.questEntity
 import com.chronoquest.rules.judge.ArrivalVerdict
 import com.chronoquest.rules.model.QuestKind
+import com.chronoquest.rules.model.QuestStatus
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -109,11 +111,40 @@ class GameServiceRecordTest {
     }
 
     @Test
-    fun `취소하면 판정에서 빠지고 XP도 다시 계산된다`() = runTest {
+    fun `기록이 있는 일정은 취소할 수 없다`() = runTest {
         service("08:55").arrive(work.id, safe = true)
-        val result = done(service("10:00").cancelQuest(work.id))
-        assertEquals(-20, result.xpGained)
-        assertFalse(work.id in service("10:00").state().outcomes)
+        assertEquals(ActionResult.Rejected(RejectReason.HAS_RECORD), service("10:00").cancelQuest(work.id))
+        assertEquals(QuestStatus.SCHEDULED, db.questDao().get(work.id)?.status)
+    }
+
+    @Test
+    fun `기록 없는 일정을 취소하면 판정에서 빠지고 되돌리면 돌아온다`() = runTest {
+        val svc = service("10:00")
+        assertTrue(work.id in svc.state().pendingQuestIds)
+        done(svc.cancelQuest(work.id))
+        assertFalse(work.id in svc.state().pendingQuestIds)
+        assertEquals(ActionResult.Rejected(RejectReason.QUEST_CANCELED), svc.cancelQuest(work.id))
+        done(svc.restoreQuest(work.id))
+        assertEquals(QuestStatus.SCHEDULED, db.questDao().get(work.id)?.status)
+        assertTrue(work.id in svc.state().pendingQuestIds)
+        assertEquals(ActionResult.Rejected(RejectReason.NOT_CANCELED), svc.restoreQuest(work.id))
+        assertEquals(ActionResult.NotFound, svc.restoreQuest("없는-일정"))
+    }
+
+    @Test
+    fun `지난 날짜의 취소는 되돌릴 수 없다`() = runTest {
+        done(service("10:00").cancelQuest(work.id))
+        val nextDay = GameService(db, clockAt("2026-12-01", "08:00"))
+        assertEquals(ActionResult.Rejected(RejectReason.PAST_DATE), nextDay.restoreQuest(work.id))
+        assertEquals(QuestStatus.CANCELED, db.questDao().get(work.id)?.status)
+    }
+
+    @Test
+    fun `휴가인 날의 출근은 기록하지 않지만 다른 일정은 기록한다`() = runTest {
+        db.vacationDao().add(VacationEntity(d("2026-11-30")))
+        assertEquals(ActionResult.Rejected(RejectReason.ON_VACATION), service("08:25").depart(work.id))
+        assertNull(db.recordDao().get(work.id))
+        assertTrue(service("18:25").depart(other.id) is ActionResult.Done)
     }
 
     @Test

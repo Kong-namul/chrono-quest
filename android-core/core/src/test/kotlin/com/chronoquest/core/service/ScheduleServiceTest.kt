@@ -4,16 +4,19 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.chronoquest.core.clockAt
 import com.chronoquest.core.d
 import com.chronoquest.core.data.ChronoDatabase
+import com.chronoquest.core.data.DayRecordEntity
 import com.chronoquest.core.data.QuestRecordEntity
 import com.chronoquest.core.data.QuestSource
 import com.chronoquest.core.domain.ScheduleProblem
 import com.chronoquest.core.dt
 import com.chronoquest.core.inMemoryDb
+import com.chronoquest.core.questEntity
 import com.chronoquest.core.weekdayTemplate
 import com.chronoquest.rules.model.QuestKind
 import com.chronoquest.rules.model.QuestStatus
 import java.time.LocalTime
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -209,5 +212,31 @@ class ScheduleServiceTest {
         assertEquals(listOf(d("2026-11-26")), svc.vacations())
         svc.setVacation(d("2026-11-26"), false)
         assertEquals(emptyList(), svc.vacations())
+    }
+
+    @Test
+    fun `지난 휴가는 끌 수 없고 기록이 있는 날은 휴가로 켤 수 없다`() = runTest {
+        val svc = service("2026-11-27", "10:00")
+        db.questDao().insertAll(listOf(questEntity("2026-11-26"), questEntity("2026-11-27")))
+        db.recordDao().upsert(QuestRecordEntity(questId = "2026-11-27-WORK-09:00", departedAt = dt("2026-11-27", "08:20")))
+        assertEquals(ScheduleResult.Rejected(listOf(ScheduleProblem.DAY_HAS_RECORD)), svc.setVacation(d("2026-11-27"), true))
+        // 지난 날이지만 활동이 전혀 없으면 깜빡한 휴가로 넣을 수 있다.
+        assertEquals(ScheduleResult.Saved("2026-11-26"), svc.setVacation(d("2026-11-26"), true))
+        assertEquals(ScheduleResult.Rejected(listOf(ScheduleProblem.PAST_DATE)), svc.setVacation(d("2026-11-26"), false))
+        assertEquals(ScheduleResult.Rejected(listOf(ScheduleProblem.BEFORE_SEASON)), svc.setVacation(d("2026-11-24"), true))
+        assertEquals(listOf(d("2026-11-26")), svc.vacations())
+    }
+
+    @Test
+    fun `깜빡한 휴가는 활동이 전혀 없는 지난 날만 묻는다`() = runTest {
+        val svc = service("2026-11-28", "10:00")
+        db.questDao().insertAll(listOf(questEntity("2026-11-26"), questEntity("2026-11-27"), questEntity("2026-11-28")))
+        db.dayDao().upsert(DayRecordEntity(date = d("2026-11-27"), selfControl = true))
+        assertTrue(svc.canMarkMissedVacation(d("2026-11-26")))
+        assertFalse(svc.canMarkMissedVacation(d("2026-11-27")))   // 행동통제 답이 있다
+        assertFalse(svc.canMarkMissedVacation(d("2026-11-28")))   // 오늘은 일정 탭에서 바꾼다
+        assertFalse(svc.canMarkMissedVacation(d("2026-11-24")))   // 시즌 시작 전
+        svc.setVacation(d("2026-11-26"), true)
+        assertFalse(svc.canMarkMissedVacation(d("2026-11-26")))   // 이미 휴가
     }
 }

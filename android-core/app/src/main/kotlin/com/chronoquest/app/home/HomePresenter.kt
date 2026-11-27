@@ -1,10 +1,9 @@
 package com.chronoquest.app.home
 
 import com.chronoquest.app.notify.SettlementNotifier
+import com.chronoquest.app.ui.Messages
 import com.chronoquest.core.data.QuestEntity
 import com.chronoquest.core.data.RecordSource
-import com.chronoquest.core.domain.RejectReason
-import com.chronoquest.core.domain.ScheduleProblem
 import com.chronoquest.core.domain.TodayQuest
 import com.chronoquest.core.service.ActionResult
 import com.chronoquest.core.service.GameService
@@ -91,7 +90,7 @@ class HomePresenter(
         if (!dialog.canReschedule) return@withContext
         val quest = game.today().quests.firstOrNull { it.quest.id == dialog.questId }?.quest
         if (quest == null) {
-            _state.update { it.copy(dialog = null, message = NOT_FOUND_TEXT) }
+            _state.update { it.copy(dialog = null, message = Messages.NOT_FOUND) }
         } else {
             _state.update {
                 it.copy(
@@ -112,7 +111,7 @@ class HomePresenter(
                 is ScheduleResult.Saved ->
                     handle(result.id, dialog.action, origin = dialog) { perform(result.id, dialog.action, allowEarly = false) }
                 is ScheduleResult.Rejected ->
-                    _state.update { it.copy(message = problemText(result.problems)) }
+                    _state.update { it.copy(message = Messages.problem(result.problems)) }
             }
         }
 
@@ -195,11 +194,11 @@ class HomePresenter(
                 _state.update { it.copy(dialog = closeIfOrigin(it.dialog, origin)) }
             }
             is ActionResult.Rejected -> _state.update {
-                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = rejectText(result.reason))
+                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = Messages.reject(result.reason))
             }
             is ActionResult.ConfirmEarly -> _state.update { it.copy(dialog = closeIfOrigin(it.dialog, origin)) }
             ActionResult.NotFound -> _state.update {
-                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = NOT_FOUND_TEXT)
+                it.copy(dialog = closeIfOrigin(it.dialog, origin), message = Messages.NOT_FOUND)
             }
         }
         refresh()
@@ -239,28 +238,5 @@ class HomePresenter(
     private companion object {
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         val CLEANUP_WHEN: DateTimeFormatter = DateTimeFormatter.ofPattern("M/d (E) HH:mm", Locale.KOREAN)
-        const val NOT_FOUND_TEXT = "일정을 찾을 수 없어."
-
-        fun rejectText(reason: RejectReason): String = when (reason) {
-            RejectReason.QUEST_CANCELED -> "취소한 일정이야."
-            RejectReason.FUTURE_TIME -> "아직 오지 않은 시각은 기록할 수 없어."
-            RejectReason.ALREADY_RECORDED -> "이미 기록했어."
-            RejectReason.ARRIVAL_BEFORE_DEPARTURE -> "도착이 출발보다 빠를 수는 없어."
-            RejectReason.SAFE_WITHOUT_ARRIVAL -> "도착 시각 없이 안전 여부만 넣을 수는 없어."
-            RejectReason.SAFE_REQUIRED -> "안전하게 왔는지 알려줘."
-            RejectReason.WRONG_DAY -> "그 일정 날짜에만 기록할 수 있어."
-            RejectReason.NOT_DUE_YET -> "아직 예정 시각이 안 됐어."
-        }
-
-        fun problemText(problems: List<ScheduleProblem>): String = when (problems.firstOrNull()) {
-            ScheduleProblem.DEPART_AFTER_DUE -> "출발 시각이 도착 시각보다 늦어."
-            ScheduleProblem.DUPLICATE -> "같은 시각에 같은 종류 일정이 이미 있어."
-            ScheduleProblem.HAS_RECORD -> "이미 기록이 있는 일정은 시각을 바꿀 수 없어."
-            ScheduleProblem.NOT_FOUND -> NOT_FOUND_TEXT
-            ScheduleProblem.BLANK_TITLE -> "일정 이름이 비어 있어."
-            ScheduleProblem.BEFORE_SEASON -> "시즌 시작 전 날짜야."
-            ScheduleProblem.NO_DAYS -> "요일을 하나 이상 골라줘."
-            null -> "일정을 바꾸지 못했어."
-        }
     }
 }

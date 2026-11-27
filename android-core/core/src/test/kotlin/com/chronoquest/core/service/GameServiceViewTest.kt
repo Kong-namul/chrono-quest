@@ -66,7 +66,7 @@ class GameServiceViewTest {
         assertEquals("최초의 각성", svc.representativeTitle())
         assertFalse(svc.setRepresentativeTitle(61))
         assertEquals("최초의 각성", svc.representativeTitle())
-        svc.cancelQuest(work.id)
+        svc.editRecord(work.id, departedAt = null, arrivedAt = null, safe = null)
         assertEquals("미각성자", svc.representativeTitle())
         assertNull(storedTitleId())
     }

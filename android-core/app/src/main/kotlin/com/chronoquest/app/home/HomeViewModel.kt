@@ -29,6 +29,9 @@ class HomeViewModel(private val presenter: HomePresenter) : ViewModel() {
     fun onCleanupAddArrival(questId: String) = presenter.onCleanupAddArrival(questId)
     fun onArrivalEntered(dialog: HomeDialog.AddArrival, time: LocalTime, safe: Boolean) =
         launch { presenter.onArrivalEntered(dialog, time, safe) }
+
+    fun onCleanupVacation(questId: String) = presenter.onCleanupVacation(questId)
+    fun onVacationConfirmed(dialog: HomeDialog.ConfirmVacation) = launch { presenter.onVacationConfirmed(dialog) }
     fun onCelebrationsSeen() = launch { presenter.onCelebrationsSeen() }
     fun dismissDialog() = presenter.dismissDialog()
     fun dismissMessage() = presenter.dismissMessage()

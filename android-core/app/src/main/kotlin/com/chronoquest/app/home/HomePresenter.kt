@@ -10,6 +10,7 @@ import com.chronoquest.core.service.GameService
 import com.chronoquest.core.service.ScheduleResult
 import com.chronoquest.core.service.ScheduleService
 import com.chronoquest.rules.judge.ArrivalVerdict
+import com.chronoquest.rules.model.QuestKind
 import com.chronoquest.rules.model.QuestStatus
 import java.time.LocalDate
 import java.time.LocalTime
@@ -42,13 +43,16 @@ class HomePresenter(
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
-    /** 일정 생성 → 오늘 요약·정리 필요·대표 칭호·안 본 연출을 다시 읽는다. 앱 복귀와 1분 주기로 부른다. */
+    /** 일정 생성 → 오늘 요약·정리 필요·펫·보스·대표 칭호·안 본 연출을 다시 읽는다. 앱 복귀와 1분 주기로 부른다. */
     suspend fun refresh() = withContext(compute) {
         refreshLock.withLock {
             schedule.generateQuests()
             val today = game.today()
             val gameState = game.state()
             val cleanup = game.needsCleanup()
+            // 정리 필요한 지난 출근 중 그날 활동이 전혀 없는 날만 [휴가였어]를 보여준다(스펙 D13).
+            val vacationDates = cleanup.filter { it.kind == QuestKind.WORK }.map { it.date }.distinct()
+                .filterTo(HashSet()) { schedule.canMarkMissedVacation(it) }
             val title = game.representativeTitle()
             val celebrations = game.unseenCelebrations()
             // 행동통제는 답할 때까지 새로고침마다 다시 묻는다(창을 닫아도 그날 사라지지 않게).
@@ -60,8 +64,10 @@ class HomePresenter(
                     xp = gameState.xp,
                     nextTierXp = gameState.nextTierXp,
                     representativeTitle = title,
-                    quests = today.quests.map(::toCard),
-                    cleanup = cleanup.map(::toCleanup),
+                    pet = CompanionCards.pet(gameState.pet, gameState.xp),
+                    boss = CompanionCards.boss(gameState.boss),
+                    quests = today.quests.map { q -> toCard(q, today.vacation) },
+                    cleanup = cleanup.map { q -> toCleanup(q, canBeVacation = q.date in vacationDates) },
                     celebrations = celebrations,
                     dialog = if (askSelfControl && it.dialog == null) HomeDialog.AskSelfControl(today.date) else it.dialog,
                 )
@@ -129,7 +135,7 @@ class HomePresenter(
 
     fun onCleanupAddArrival(questId: String) {
         val card = _state.value.cleanup.firstOrNull { it.id == questId } ?: return
-        _state.update { it.copy(dialog = HomeDialog.AddArrival(questId, card.date)) }
+        _state.update { it.copy(dialog = HomeDialog.AddArrival(questId, card.date, card.due)) }
     }
 
     suspend fun onArrivalEntered(dialog: HomeDialog.AddArrival, time: LocalTime, safe: Boolean) =
@@ -143,6 +149,23 @@ class HomePresenter(
             )
             applyResult(result, dialog)
         }
+
+    /** 정리 필요 카드의 [휴가였어]. 그날 활동이 없는 지난 출근에만 창을 연다. */
+    fun onCleanupVacation(questId: String) {
+        val card = _state.value.cleanup.firstOrNull { it.id == questId && it.canBeVacation } ?: return
+        _state.update { it.copy(dialog = HomeDialog.ConfirmVacation(card.date)) }
+    }
+
+    suspend fun onVacationConfirmed(dialog: HomeDialog.ConfirmVacation) = withContext(compute) {
+        val result = schedule.setVacation(dialog.date, true)
+        _state.update {
+            it.copy(
+                dialog = closeIfOrigin(it.dialog, dialog),
+                message = if (result is ScheduleResult.Rejected) Messages.problem(result.problems) else it.message,
+            )
+        }
+        refresh()
+    }
 
     suspend fun onCelebrationsSeen() = withContext(compute) {
         game.markSeen(_state.value.celebrations.map { it.key })
@@ -207,9 +230,10 @@ class HomePresenter(
     private fun closeIfOrigin(current: HomeDialog?, origin: HomeDialog?): HomeDialog? =
         if (current == origin) null else current
 
-    private fun toCard(item: TodayQuest): QuestCard {
+    private fun toCard(item: TodayQuest, vacation: Boolean): QuestCard {
         val status = when {
             item.quest.status == QuestStatus.CANCELED -> CardStatus.CANCELED
+            vacation && item.quest.kind == QuestKind.WORK -> CardStatus.VACATION
             item.outcome?.verdict == ArrivalVerdict.EARLY -> CardStatus.EARLY
             item.outcome?.verdict == ArrivalVerdict.ON_TIME -> CardStatus.ON_TIME
             item.outcome?.verdict == ArrivalVerdict.CLOSE -> CardStatus.CLOSE
@@ -228,11 +252,13 @@ class HomePresenter(
         )
     }
 
-    private fun toCleanup(quest: QuestEntity) = CleanupCard(
+    private fun toCleanup(quest: QuestEntity, canBeVacation: Boolean) = CleanupCard(
         id = quest.id,
         title = quest.title,
         whenLabel = quest.dueAt.format(CLEANUP_WHEN),
         date = quest.date,
+        due = quest.dueAt.toLocalTime(),
+        canBeVacation = canBeVacation,
     )
 
     private companion object {

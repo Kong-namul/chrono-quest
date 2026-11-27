@@ -13,6 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.DialogProperties
 import com.chronoquest.app.ui.theme.ChronoTokens
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private val VACATION_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("M/d (E)", Locale.KOREAN)
 
 @Composable
 fun HomeDialogHost(dialog: HomeDialog?, actions: HomeActions) {
@@ -52,6 +56,13 @@ fun HomeDialogHost(dialog: HomeDialog?, actions: HomeActions) {
             dismissButton = { TextButton(onClick = { actions.onSelfControlAnswered(dialog.date, false) }) { Text("했어") } },
         )
         is HomeDialog.AddArrival -> AddArrivalDialog(dialog, actions)
+        is HomeDialog.ConfirmVacation -> AlertDialog(
+            onDismissRequest = actions.onDismissDialog,
+            title = { Text("그날 휴가였어?") },
+            text = { Text("${dialog.date.format(VACATION_DATE)}에는 기록이 하나도 없어. 휴가였으면 그날 출근은 판정에서 빠져.") },
+            confirmButton = { TextButton(onClick = { actions.onVacationConfirmed(dialog) }) { Text("휴가였어") } },
+            dismissButton = { TextButton(onClick = actions.onDismissDialog) { Text("아니야") } },
+        )
     }
 }
 
@@ -83,7 +94,7 @@ private fun RescheduleDialog(dialog: HomeDialog.Reschedule, actions: HomeActions
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddArrivalDialog(dialog: HomeDialog.AddArrival, actions: HomeActions) {
-    val time = rememberTimePickerState(9, 0, is24Hour = true)
+    val time = rememberTimePickerState(dialog.due.hour, dialog.due.minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = actions.onDismissDialog,
         title = { Text("도착 시각 넣기") },

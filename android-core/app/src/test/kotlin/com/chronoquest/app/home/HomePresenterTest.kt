@@ -8,6 +8,8 @@ import com.chronoquest.app.inMemoryDb
 import com.chronoquest.app.notify.SettlementNotifier
 import com.chronoquest.app.questEntity
 import com.chronoquest.core.data.ChronoDatabase
+import com.chronoquest.core.data.QuestRecordEntity
+import com.chronoquest.core.data.VacationEntity
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.service.GameService
 import com.chronoquest.core.service.ScheduleService
@@ -147,6 +149,7 @@ class HomePresenterTest {
         presenter.refresh()
         presenter.onCleanupAddArrival(work.id)
         val dialog = state.dialog as HomeDialog.AddArrival
+        assertEquals(LocalTime.parse("09:00"), dialog.due)
         presenter.onArrivalEntered(dialog, LocalTime.parse("08:58"), true)
         assertTrue(state.cleanup.isEmpty())
         assertEquals(CardStatus.ON_TIME, card(work.id).status)
@@ -255,6 +258,54 @@ class HomePresenterTest {
         presenter.onSelfControlAnswered(d("2026-11-30"), true)
         assertNull(state.dialog)
         presenter.refresh()
+        assertNull(state.dialog)
+    }
+
+    @Test
+    fun `펫과 이번 주 보스를 글자 카드로 보여준다`() = runTest {
+        presenter.refresh()
+        assertEquals(PetCard(stage = "알", form = null, mood = "보통", xpToEvolve = 100, evolveProgress = 0f), state.pet)
+        assertEquals(CurrentBoss("스누즈 슬라임", hp = 100, maxHp = 100, status = "진행 중"), state.boss.current)
+        assertEquals(0, state.boss.defeatedKinds)
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(work.id, true)
+        assertEquals("신남", state.pet.mood)
+        assertEquals(80, state.pet.xpToEvolve)
+        assertEquals(0, state.boss.current?.hp)
+    }
+
+    @Test
+    fun `휴가인 날의 출근 카드는 휴가로 보이고 버튼이 없다`() = runTest {
+        db.vacationDao().add(VacationEntity(d("2026-11-30")))
+        presenter.refresh()
+        assertEquals(CardStatus.VACATION, card(work.id).status)
+        assertFalse(card(work.id).canDepart)
+        assertFalse(card(work.id).canArrive)
+        assertEquals(CardStatus.WAITING, card(other.id).status)
+    }
+
+    @Test
+    fun `활동이 없는 지난 날의 출근 정리는 휴가였는지 묻고 휴가로 넣는다`() = runTest {
+        val friday = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(friday))
+        presenter.refresh()
+        assertTrue(state.cleanup.single { it.id == friday.id }.canBeVacation)
+        presenter.onCleanupVacation(friday.id)
+        assertEquals(HomeDialog.ConfirmVacation(d("2026-11-27")), state.dialog)
+        presenter.onVacationConfirmed(HomeDialog.ConfirmVacation(d("2026-11-27")))
+        assertNull(state.dialog)
+        assertTrue(state.cleanup.none { it.id == friday.id })
+    }
+
+    @Test
+    fun `그날 기록이 있으면 휴가였는지 묻지 않는다`() = runTest {
+        val thuWork = questEntity("2026-11-26")
+        val thuOther = questEntity("2026-11-26", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
+        db.questDao().insertAll(listOf(thuWork, thuOther))
+        db.recordDao().upsert(QuestRecordEntity(questId = thuOther.id, arrivedAt = dt("2026-11-26", "18:55"), safe = true))
+        presenter.refresh()
+        assertFalse(state.cleanup.single { it.id == thuWork.id }.canBeVacation)
+        presenter.onCleanupVacation(thuWork.id)
         assertNull(state.dialog)
     }
 }

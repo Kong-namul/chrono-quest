@@ -10,14 +10,18 @@ import com.chronoquest.core.data.RecordSource
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.domain.Celebrations
 import com.chronoquest.core.domain.CleanupFilter
+import com.chronoquest.core.domain.CleanupQuest
+import com.chronoquest.core.domain.DayActivity
 import com.chronoquest.core.domain.RecordPolicy
 import com.chronoquest.core.domain.RecordResult
 import com.chronoquest.core.domain.RejectReason
 import com.chronoquest.core.domain.RepresentativeTitle
+import com.chronoquest.core.domain.TitleChoice
 import com.chronoquest.core.domain.Today
 import com.chronoquest.core.domain.TodaySummary
 import com.chronoquest.rules.engine.Engine
 import com.chronoquest.rules.engine.GameState
+import com.chronoquest.rules.model.QuestKind
 import com.chronoquest.rules.model.QuestStatus
 import com.chronoquest.rules.titles.TitleCatalog
 import java.time.Clock
@@ -97,10 +101,26 @@ class GameService(
         recordAction(questId, now) { quest, current -> RecordPolicy.resolveNoRecord(quest, current, now) }
     }
 
-    /** 불가피한 취소(스펙 6.4). 판정에서 빠진다. */
+    /**
+     * 불가피한 취소(스펙 6.4, D13). 판정에서 빠진다.
+     * 기록(출발·도착·기록 없음 정리)이 있는 일정은 취소할 수 없다. 실수로 XP를 날리지 않게 하려는 것이다.
+     * 기록 없는 지난 일정은 홈 "정리 필요"에서 취소할 수 있다.
+     */
     suspend fun cancelQuest(questId: String): ActionResult = write { now ->
         val quest = db.questDao().get(questId) ?: return@write ActionResult.NotFound
+        if (quest.status == QuestStatus.CANCELED) return@write ActionResult.Rejected(RejectReason.QUEST_CANCELED)
+        if (DayActivity.hasRecord(db.recordDao().get(questId))) {
+            return@write ActionResult.Rejected(RejectReason.HAS_RECORD)
+        }
         applyChange(now) { db.questDao().update(quest.copy(status = QuestStatus.CANCELED)) }
+    }
+
+    /** 취소 되돌리기. 오늘과 그 뒤 일정만 된다(스펙 D13). */
+    suspend fun restoreQuest(questId: String): ActionResult = write { now ->
+        val quest = db.questDao().get(questId) ?: return@write ActionResult.NotFound
+        if (quest.status != QuestStatus.CANCELED) return@write ActionResult.Rejected(RejectReason.NOT_CANCELED)
+        if (quest.date.isBefore(now.toLocalDate())) return@write ActionResult.Rejected(RejectReason.PAST_DATE)
+        applyChange(now) { db.questDao().update(quest.copy(status = QuestStatus.SCHEDULED)) }
     }
 
     /** 행동통제 답. 오늘 이후 날짜는 미리 답할 수 없다. */
@@ -120,11 +140,18 @@ class GameService(
         db.celebrationDao().markSeen(keys.map { CelebrationSeenEntity(grantKey = it, seenAt = at) })
     }
 
-    /** 홈 "오늘의 퀘스트"용 요약. */
+    /** 홈 "오늘의 퀘스트"용 요약. 오늘이 휴가인지도 같이 준다. */
     suspend fun today(): TodaySummary {
         val now = clock.nowLocal()
         val state = engine.compute(ledgers.loadLedger(), now)
-        return Today.summarize(now.toLocalDate(), state, db.questDao().all(), db.recordDao().all(), db.dayDao().all())
+        return Today.summarize(
+            now.toLocalDate(),
+            state,
+            db.questDao().all(),
+            db.recordDao().all(),
+            db.dayDao().all(),
+            db.vacationDao().all().mapTo(HashSet()) { it.date },
+        )
     }
 
     /** 홈 "정리 필요" 카드 대상. */
@@ -133,17 +160,30 @@ class GameService(
         return CleanupFilter.needsCleanup(engine.compute(ledgers.loadLedger(), now), db.questDao().all(), now)
     }
 
+    /** 홈 "정리 필요" 카드 대상을 기록 여부와 함께 준다. 기록이 있으면 [취소]를 못 하므로(스펙 D13) 화면이 버튼을 숨긴다. */
+    suspend fun cleanupQuests(): List<CleanupQuest> =
+        db.withTransaction { needsCleanup().map { CleanupQuest(it, DayActivity.hasRecord(db.recordDao().get(it.id))) } }
+
+    /** 홈에 띄우는 대표 칭호 이름. */
+    suspend fun representativeTitle(): String = representative().name
+
     /**
-     * 홈 대표 칭호 이름. 저장된 것이 없거나 더는 갖고 있지 않으면 가장 최근 칭호를 골라 저장하고,
+     * 대표 칭호(ID와 이름). 저장된 것이 없거나 더는 갖고 있지 않으면 가장 최근 칭호를 골라 저장한다.
      * 칭호가 하나도 없으면 저장값을 지운다. 새 칭호를 얻었다고 저절로 바꾸지는 않는다.
+     * 홈이 1분마다 부르므로 먼저 잠금 없이 판단하고, 바꿔야 할 때만 쓰기 잠금 안에서 다시 판단해 저장한다.
      */
-    suspend fun representativeTitle(): String = write { now ->
+    suspend fun representative(): TitleChoice {
         val stored = ledgers.settings().representativeTitleId
-        val choice = RepresentativeTitle.resolve(stored, stateAt(now), catalog)
-        if (choice.titleId != stored) {
-            db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = choice.titleId))
+        val peek = RepresentativeTitle.resolve(stored, state(), catalog)
+        if (peek.titleId == stored) return peek
+        return write { now ->
+            val current = ledgers.settings().representativeTitleId
+            val choice = RepresentativeTitle.resolve(current, stateAt(now), catalog)
+            if (choice.titleId != current) {
+                db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = choice.titleId))
+            }
+            choice
         }
-        choice.name
     }
 
     /** 칭호 화면의 NEW 표시 대상: 가진 칭호 중 아직 보지 않은 것. */
@@ -177,6 +217,10 @@ class GameService(
         decide: (QuestEntity, QuestRecordEntity?) -> RecordResult,
     ): ActionResult {
         val quest = db.questDao().get(questId) ?: return ActionResult.NotFound
+        // 엔진은 휴가일의 출근을 판정에서 빼므로, 그날 출근은 기록 자체를 받지 않는다.
+        if (quest.kind == QuestKind.WORK && db.vacationDao().isVacation(quest.date)) {
+            return ActionResult.Rejected(RejectReason.ON_VACATION)
+        }
         return when (val result = decide(quest, db.recordDao().get(questId))) {
             is RecordResult.Rejected -> ActionResult.Rejected(result.reason)
             is RecordResult.NeedsEarlyConfirmation -> ActionResult.ConfirmEarly(result.minutesEarly)

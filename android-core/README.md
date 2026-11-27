@@ -6,7 +6,7 @@
 |---|---|
 | `rules` | 순수 Kotlin 판정 엔진 (XP, 티어, 칭호 200종, 기간 보너스, 복귀, 펫, 주간 보스) |
 | `core` | Android 라이브러리. Room 저장소, 일정 생성, 기록 규칙, `GameService`, `ScheduleService` |
-| `app` | 실행용 앱. Compose 홈 화면, 확인 창, 정산 알림. 디자인 토큰은 루트 `design-tokens.json`에서 `tools/gen-tokens/gen_tokens.py`로 생성 |
+| `app` | 실행용 앱. 하단 탭 홈(오늘의 퀘스트, 펫·보스 카드, 정리 필요)·일정(반복·단발 일정, 취소·되돌리기, 휴가)·칭호(도감, NEW, 대표 칭호). 기록 탭은 A2b-3. 정산 알림. 디자인 토큰은 루트 `design-tokens.json`에서 `tools/gen-tokens/gen_tokens.py`로 생성 |
 
 ## 준비
 
@@ -31,6 +31,9 @@ cd android-core
 cd android-core
 ./gradlew :app:recordRoborazziDebug   # app/screenshots/*.png 갱신
 ```
+
+- 이름 앞부분으로 화면을 나눈다. `home_*`(홈), `schedule_*`(일정), `codex_*`(칭호), `tier_palettes`(티어 시안).
+- 화면 코드를 고치면 다시 찍고, 바뀐 PNG를 눈으로 확인한 뒤 같이 커밋한다.
 
 ## 디자인 토큰
 

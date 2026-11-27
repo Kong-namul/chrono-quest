@@ -4,6 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.chronoquest.core.clockAt
 import com.chronoquest.core.d
 import com.chronoquest.core.data.ChronoDatabase
+import com.chronoquest.core.data.VacationEntity
+import com.chronoquest.core.domain.TitleChoice
 import com.chronoquest.core.inMemoryDb
 import com.chronoquest.core.questEntity
 import com.chronoquest.rules.engine.GrantType
@@ -56,6 +58,17 @@ class GameServiceViewTest {
     }
 
     @Test
+    fun `정리 필요 목록은 기록 여부를 함께 준다`() = runTest {
+        val old = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(old))
+        service("08:25").depart(work.id)
+        val cleanup = service("12:30").cleanupQuests()
+        assertEquals(listOf(old, work), cleanup.map { it.quest })
+        assertFalse(cleanup.single { it.quest.id == old.id }.hasRecord)
+        assertTrue(cleanup.single { it.quest.id == work.id }.hasRecord)
+    }
+
+    @Test
     fun `대표 칭호는 가진 칭호만 고를 수 있고 사라지면 최근 칭호로 돌아간다`() = runTest {
         assertEquals("미각성자", service("08:00").representativeTitle())
         service("08:55").arrive(work.id, safe = true)
@@ -66,7 +79,7 @@ class GameServiceViewTest {
         assertEquals("최초의 각성", svc.representativeTitle())
         assertFalse(svc.setRepresentativeTitle(61))
         assertEquals("최초의 각성", svc.representativeTitle())
-        svc.cancelQuest(work.id)
+        svc.editRecord(work.id, departedAt = null, arrivedAt = null, safe = null)
         assertEquals("미각성자", svc.representativeTitle())
         assertNull(storedTitleId())
     }
@@ -113,6 +126,33 @@ class GameServiceViewTest {
         svc.markTitlesViewed(listOf(1))
         assertEquals(setOf(21), svc.newTitleIds())
         assertEquals(listOf("title:1:1", "title:21:1"), svc.unseenCelebrations().map { it.key })
+    }
+
+    @Test
+    fun `오늘이 휴가면 오늘 요약에 표시한다`() = runTest {
+        assertFalse(service("08:00").today().vacation)
+        db.vacationDao().add(VacationEntity(d("2026-11-30")))
+        assertTrue(service("08:00").today().vacation)
+    }
+
+    @Test
+    fun `대표 칭호는 ID와 이름을 같이 준다`() = runTest {
+        assertEquals(TitleChoice(null, "미각성자"), service("08:00").representative())
+        service("08:55").arrive(work.id, safe = true)
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), service("09:00").representative())
+    }
+
+    @Test
+    fun `대표 칭호가 맞으면 그대로 두고 갖지 않은 칭호면 최근 칭호로 한 번 고친다`() = runTest {
+        service("08:55").arrive(work.id, safe = true)
+        val svc = service("09:00")
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
+        db.settingsDao().upsert(db.settingsDao().get()!!.copy(representativeTitleId = 61))
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
     }
 
     private suspend fun storedTitleId(): Int? = db.settingsDao().get()?.representativeTitleId

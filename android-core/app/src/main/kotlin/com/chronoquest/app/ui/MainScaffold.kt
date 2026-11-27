@@ -56,7 +56,7 @@ fun ChronoScaffold(selectedTab: MainTab, onTabSelected: (MainTab) -> Unit, conte
     }
 }
 
-/** A2b-2에서 만들 화면 자리. */
+/** A2b-3에서 만들 화면 자리(기록 탭). */
 @Composable
 fun ComingSoon(tab: MainTab) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

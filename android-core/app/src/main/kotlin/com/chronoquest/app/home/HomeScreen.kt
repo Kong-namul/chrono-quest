@@ -5,9 +5,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.chronoquest.app.ui.Chip
+import com.chronoquest.app.ui.LoadingText
+import com.chronoquest.app.ui.MessageDialog
 import com.chronoquest.app.ui.theme.ChronoTokens
 import com.chronoquest.app.ui.theme.onTierColor
 import com.chronoquest.app.ui.theme.tierColor
@@ -54,21 +62,28 @@ data class HomeActions(
     val onCleanupCancel: (String) -> Unit = {},
     val onCleanupAddArrival: (String) -> Unit = {},
     val onArrivalEntered: (HomeDialog.AddArrival, LocalTime, Boolean) -> Unit = { _, _, _ -> },
+    val onCleanupVacation: (String) -> Unit = {},
+    val onVacationConfirmed: (HomeDialog.ConfirmVacation) -> Unit = {},
     val onDismissDialog: () -> Unit = {},
     val onDismissMessage: () -> Unit = {},
-    val onCelebrationsSeen: () -> Unit = {},
+    val onCelebrationsSeen: (List<String>) -> Unit = {},
 )
 
 @Composable
 fun HomeScreen(state: HomeUiState, actions: HomeActions, modifier: Modifier = Modifier) {
+    if (state.loading) {
+        LoadingText(modifier)
+        return
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize().background(ChronoTokens.Colors.Bg1),
         contentPadding = PaddingValues(horizontal = ChronoTokens.Space.Lg, vertical = ChronoTokens.Space.Xl),
         verticalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Md),
     ) {
         item { Header(state) }
+        item { CompanionRow(state.pet, state.boss) }
         if (state.celebrations.isNotEmpty()) {
-            item { CelebrationCard(state.celebrations, actions.onCelebrationsSeen) }
+            item { CelebrationCard(state.celebrations) { actions.onCelebrationsSeen(state.celebrations.map { it.key }) } }
         }
         if (state.cleanup.isNotEmpty()) {
             item { SectionTitle("정리 필요") }
@@ -179,20 +194,12 @@ private fun StatusChip(status: CardStatus) {
         CardStatus.CLOSE -> Triple("아슬아슬", ChronoTokens.Colors.Yellow50, ChronoTokens.Colors.Gold700)
         CardStatus.LATE -> Triple("지각", ChronoTokens.Colors.Bg2, ChronoTokens.Colors.Text1)
         CardStatus.CANCELED -> Triple("취소", ChronoTokens.Colors.Bg2, ChronoTokens.Colors.Text2)
+        CardStatus.VACATION -> Triple("휴가", ChronoTokens.Colors.Bg2, ChronoTokens.Colors.Text2)
     }
     Chip(label, background, foreground)
 }
 
-@Composable
-private fun Chip(label: String, background: Color, foreground: Color) {
-    Text(
-        label,
-        modifier = Modifier.background(background, RoundedCornerShape(ChronoTokens.Radius.Sm)).padding(horizontal = ChronoTokens.Space.Md, vertical = ChronoTokens.Space.Xs),
-        style = MaterialTheme.typography.labelLarge,
-        color = foreground,
-    )
-}
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CleanupRow(card: CleanupCard, actions: HomeActions) {
     Column(
@@ -203,11 +210,82 @@ private fun CleanupRow(card: CleanupCard, actions: HomeActions) {
     ) {
         Text("${card.whenLabel} ${card.title}", style = MaterialTheme.typography.titleMedium, color = ChronoTokens.Colors.Text1)
         Text("도착 기록이 없어. 어떻게 정리할까?", style = MaterialTheme.typography.bodyMedium, color = ChronoTokens.Colors.Gold700)
-        Row {
+        FlowRow {
             TextButton(onClick = { actions.onCleanupAddArrival(card.id) }) { Text("기록 추가") }
             TextButton(onClick = { actions.onCleanupLate(card.id) }) { Text("지각 처리") }
-            TextButton(onClick = { actions.onCleanupCancel(card.id) }) { Text("취소") }
+            if (card.canCancel) {
+                TextButton(onClick = { actions.onCleanupCancel(card.id) }) { Text("취소") }
+            }
+            if (card.canBeVacation) {
+                TextButton(onClick = { actions.onCleanupVacation(card.id) }) { Text("휴가였어") }
+            }
         }
+    }
+}
+
+/** 홈 위쪽의 펫·보스 카드 한 줄. 두 카드 높이를 맞춘다. */
+@Composable
+private fun CompanionRow(pet: PetCard, boss: BossCard) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Md),
+    ) {
+        PetPanel(pet, Modifier.weight(1f).fillMaxHeight())
+        BossPanel(boss, Modifier.weight(1f).fillMaxHeight())
+    }
+}
+
+@Composable
+private fun Panel(label: String, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = modifier
+            .background(ChronoTokens.Colors.Bg2, RoundedCornerShape(ChronoTokens.Radius.Lg))
+            .padding(ChronoTokens.Space.Lg),
+        verticalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Xs),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = ChronoTokens.Colors.Text2)
+        content()
+    }
+}
+
+@Composable
+private fun PetPanel(pet: PetCard, modifier: Modifier) {
+    Panel("펫", modifier) {
+        Text(listOfNotNull(pet.stage, pet.form).joinToString(" · "), style = MaterialTheme.typography.titleMedium, color = ChronoTokens.Colors.Text1)
+        Text("기분: ${pet.mood}", style = MaterialTheme.typography.bodyMedium, color = ChronoTokens.Colors.Text2)
+        LinearProgressIndicator(
+            progress = { pet.evolveProgress },
+            modifier = Modifier.fillMaxWidth().height(XP_BAR_HEIGHT),
+            color = ChronoTokens.Colors.Gold500,
+            trackColor = ChronoTokens.Colors.Yellow50,
+            drawStopIndicator = {},
+        )
+        Text(
+            pet.xpToEvolve?.let { "진화까지 $it XP" } ?: "다 컸어",
+            style = MaterialTheme.typography.bodyMedium,
+            color = ChronoTokens.Colors.Text2,
+        )
+    }
+}
+
+@Composable
+private fun BossPanel(boss: BossCard, modifier: Modifier) {
+    Panel("이번 주 보스", modifier) {
+        val current = boss.current
+        if (current == null) {
+            Text("이번 주는 출근이 없어.", style = MaterialTheme.typography.bodyMedium, color = ChronoTokens.Colors.Text2)
+        } else {
+            Text(current.name, style = MaterialTheme.typography.titleMedium, color = ChronoTokens.Colors.Text1)
+            Text("HP ${current.hp}/${current.maxHp} · ${current.status}", style = MaterialTheme.typography.bodyMedium, color = ChronoTokens.Colors.Text2)
+            LinearProgressIndicator(
+                progress = { if (current.maxHp == 0) 0f else current.hp.toFloat() / current.maxHp },
+                modifier = Modifier.fillMaxWidth().height(XP_BAR_HEIGHT),
+                color = ChronoTokens.Colors.Blue500,
+                trackColor = ChronoTokens.Colors.Blue50,
+                drawStopIndicator = {},
+            )
+        }
+        Text("처치한 보스 ${boss.defeatedKinds}종", style = MaterialTheme.typography.bodyMedium, color = ChronoTokens.Colors.Text2)
     }
 }
 

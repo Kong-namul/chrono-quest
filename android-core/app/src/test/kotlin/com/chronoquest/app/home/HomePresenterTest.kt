@@ -8,6 +8,8 @@ import com.chronoquest.app.inMemoryDb
 import com.chronoquest.app.notify.SettlementNotifier
 import com.chronoquest.app.questEntity
 import com.chronoquest.core.data.ChronoDatabase
+import com.chronoquest.core.data.QuestRecordEntity
+import com.chronoquest.core.data.VacationEntity
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.service.GameService
 import com.chronoquest.core.service.ScheduleService
@@ -19,6 +21,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -31,6 +35,7 @@ class HomePresenterTest {
     private lateinit var presenter: HomePresenter
     private val clock = MutableClock(dt("2026-11-30", "08:00"))
     private val notified = mutableListOf<Pair<Int, List<Celebration>>>()
+    private val notifier = SettlementNotifier { xp, celebrations -> notified += xp to celebrations }
     private val work = questEntity("2026-11-30")
     private val other = questEntity("2026-11-30", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
 
@@ -38,7 +43,6 @@ class HomePresenterTest {
     fun setUp() = runTest {
         db = inMemoryDb()
         db.questDao().insertAll(listOf(other, work))
-        val notifier = SettlementNotifier { xp, celebrations -> notified += xp to celebrations }
         presenter = HomePresenter({ GameService(db, clock) }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
     }
 
@@ -147,6 +151,7 @@ class HomePresenterTest {
         presenter.refresh()
         presenter.onCleanupAddArrival(work.id)
         val dialog = state.dialog as HomeDialog.AddArrival
+        assertEquals(LocalTime.parse("09:00"), dialog.due)
         presenter.onArrivalEntered(dialog, LocalTime.parse("08:58"), true)
         assertTrue(state.cleanup.isEmpty())
         assertEquals(CardStatus.ON_TIME, card(work.id).status)
@@ -177,7 +182,7 @@ class HomePresenterTest {
         clock.now = dt("2026-11-30", "08:55")
         presenter.onSafetyAnswered(work.id, true)
         assertEquals(listOf("title:1:1", "title:21:1"), state.celebrations.map { it.key })
-        presenter.onCelebrationsSeen()
+        presenter.onCelebrationsSeen(state.celebrations.map { it.key })
         assertTrue(state.celebrations.isEmpty())
         presenter.refresh()
         assertTrue(state.celebrations.isEmpty())
@@ -214,15 +219,17 @@ class HomePresenterTest {
     }
 
     @Test
-    fun `XP가 줄면 음수로 알리고 변화가 없으면 알리지 않는다`() = runTest {
+    fun `기록이 있는 일정은 취소하지 못하고 XP 변화가 없으면 알리지 않는다`() = runTest {
         clock.now = dt("2026-11-30", "08:55")
         presenter.onSafetyAnswered(work.id, true)
         val before = notified.size
         presenter.onCleanupCancel(work.id)
-        assertEquals(before + 1, notified.size)
-        assertEquals(-20, notified.last().first)
+        assertEquals("기록이 있는 일정은 취소할 수 없어.", state.message)
+        assertEquals(CardStatus.ON_TIME, card(work.id).status)
+        presenter.dismissMessage()
         presenter.onCleanupCancel(other.id)
-        assertEquals(before + 1, notified.size)
+        assertEquals(before, notified.size)
+        assertEquals(CardStatus.CANCELED, card(other.id).status)
     }
 
     @Test
@@ -254,5 +261,137 @@ class HomePresenterTest {
         assertNull(state.dialog)
         presenter.refresh()
         assertNull(state.dialog)
+    }
+
+    @Test
+    fun `펫과 이번 주 보스를 글자 카드로 보여준다`() = runTest {
+        presenter.refresh()
+        assertEquals(PetCard(stage = "알", form = null, mood = "보통", xpToEvolve = 100, evolveProgress = 0f), state.pet)
+        assertEquals(CurrentBoss("스누즈 슬라임", hp = 100, maxHp = 100, status = "진행 중"), state.boss.current)
+        assertEquals(0, state.boss.defeatedKinds)
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(work.id, true)
+        assertEquals("신남", state.pet.mood)
+        assertEquals(80, state.pet.xpToEvolve)
+        assertEquals(0, state.boss.current?.hp)
+    }
+
+    @Test
+    fun `휴가인 날의 출근 카드는 휴가로 보이고 버튼이 없다`() = runTest {
+        db.vacationDao().add(VacationEntity(d("2026-11-30")))
+        presenter.refresh()
+        assertEquals(CardStatus.VACATION, card(work.id).status)
+        assertFalse(card(work.id).canDepart)
+        assertFalse(card(work.id).canArrive)
+        assertEquals(CardStatus.WAITING, card(other.id).status)
+    }
+
+    @Test
+    fun `활동이 없는 지난 날의 출근 정리는 휴가였는지 묻고 휴가로 넣는다`() = runTest {
+        val friday = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(friday))
+        presenter.refresh()
+        assertTrue(state.cleanup.single { it.id == friday.id }.canBeVacation)
+        presenter.onCleanupVacation(friday.id)
+        assertEquals(HomeDialog.ConfirmVacation(d("2026-11-27")), state.dialog)
+        presenter.onVacationConfirmed(HomeDialog.ConfirmVacation(d("2026-11-27")))
+        assertNull(state.dialog)
+        assertTrue(state.cleanup.none { it.id == friday.id })
+    }
+
+    @Test
+    fun `출발만 하고 도착을 못 남긴 정리 카드는 취소할 수 없다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.onSelfControlAnswered(d("2026-11-30"), true)
+        val friday = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(friday))
+        clock.now = dt("2026-11-30", "12:30")
+        presenter.refresh()
+        assertFalse(state.cleanup.single { it.id == work.id }.canCancel)
+        assertTrue(state.cleanup.single { it.id == friday.id }.canCancel)
+    }
+
+    @Test
+    fun `그날 기록이 있으면 휴가였는지 묻지 않는다`() = runTest {
+        val thuWork = questEntity("2026-11-26")
+        val thuOther = questEntity("2026-11-26", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
+        db.questDao().insertAll(listOf(thuWork, thuOther))
+        db.recordDao().upsert(QuestRecordEntity(questId = thuOther.id, arrivedAt = dt("2026-11-26", "18:55"), safe = true))
+        presenter.refresh()
+        assertFalse(state.cleanup.single { it.id == thuWork.id }.canBeVacation)
+        presenter.onCleanupVacation(thuWork.id)
+        assertNull(state.dialog)
+    }
+
+    @Test
+    fun `휴가였어는 출근 정리 카드에만 보여준다`() = runTest {
+        val friWork = questEntity("2026-11-27")
+        val friOther = questEntity("2026-11-27", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
+        db.questDao().insertAll(listOf(friWork, friOther))
+        presenter.refresh()
+        assertTrue(state.cleanup.single { it.id == friWork.id }.canBeVacation)
+        assertFalse(state.cleanup.single { it.id == friOther.id }.canBeVacation)
+        presenter.onCleanupVacation(friOther.id)
+        assertNull(state.dialog)
+    }
+
+    @Test
+    fun `동작이 끝나기 전에 다시 누른 것은 무시한다`() = runTest {
+        // compute를 테스트 디스패처로 두면 첫 동작이 문(gate)을 잡은 채 멈춘 사이에 두 번째 동작이 들어온다.
+        val gated = HomePresenter(
+            { GameService(db, clock) },
+            { ScheduleService(db, clock) },
+            notifier,
+            StandardTestDispatcher(testScheduler),
+        )
+        clock.now = dt("2026-11-30", "08:25")
+        val first = launch { gated.onDepart(work.id) }
+        val second = launch { gated.onDepart(work.id) }
+        first.join()
+        second.join()
+        assertNull(gated.state.value.message)
+        assertEquals(1, notified.size)
+    }
+
+    @Test
+    fun `새로고침이 실패하면 로딩을 풀고 알려준다`() = runTest {
+        val broken = HomePresenter({ error("DB 고장") }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
+        val failure = runCatching { broken.refresh() }.exceptionOrNull()
+        broken.onFailure(failure!!)
+        assertFalse(broken.state.value.loading)
+        assertEquals("문제가 생겼어. 잠시 뒤에 다시 해줘.", broken.state.value.message)
+    }
+
+    @Test
+    fun `연출 확인은 화면에 보인 것만 본 것으로 한다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.dismissDialog()
+        val shown = state.celebrations.map { it.key }
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(work.id, true)
+        presenter.onCelebrationsSeen(shown)
+        assertEquals(listOf("title:1:1", "title:21:1"), state.celebrations.map { it.key })
+    }
+
+    @Test
+    fun `다른 곳에서 행동통제를 답했으면 새로고침 때 질문 창을 닫는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        assertEquals(HomeDialog.AskSelfControl(d("2026-11-30")), state.dialog)
+        GameService(db, clock).answerSelfControl(d("2026-11-30"), true)
+        presenter.refresh()
+        assertNull(state.dialog)
+    }
+
+    @Test
+    fun `서비스는 처음 새로고침할 때 한 번만 만든다`() = runTest {
+        var made = 0
+        val lazyPresenter = HomePresenter({ made++; GameService(db, clock) }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
+        assertEquals(0, made)
+        lazyPresenter.refresh()
+        lazyPresenter.refresh()
+        assertEquals(1, made)
     }
 }

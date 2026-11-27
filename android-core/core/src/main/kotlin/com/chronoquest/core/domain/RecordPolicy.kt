@@ -18,6 +18,14 @@ enum class RejectReason {
     SAFE_REQUIRED,
     WRONG_DAY,
     NOT_DUE_YET,
+    /** 기록(출발·도착·기록 없음 정리)이 있어서 취소할 수 없다(스펙 D13). */
+    HAS_RECORD,
+    /** 지난 날짜라 바꿀 수 없다(스펙 D13). */
+    PAST_DATE,
+    /** 휴가인 날의 출근 일정은 기록하지 않는다. 엔진도 판정에서 뺀다. */
+    ON_VACATION,
+    /** 취소한 일정이 아니라서 되돌릴 게 없다. */
+    NOT_CANCELED,
 }
 
 sealed interface RecordResult {

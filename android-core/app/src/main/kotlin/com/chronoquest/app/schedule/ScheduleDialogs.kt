@@ -15,10 +15,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
+import androidx.compose.material3.TimePickerState
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -31,12 +31,14 @@ import androidx.compose.ui.unit.dp
 import com.chronoquest.app.ui.theme.ChronoTokens
 import com.chronoquest.rules.model.QuestKind
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneOffset
 
-/** 이름 입력칸 너비. 기본 최소 너비(280dp)가 창 안쪽보다 넓어 Robolectric에서 레이아웃이 끝나지 않아 고정한다. */
+/**
+ * 이름 입력칸 너비. Robolectric에서 `AlertDialog` 안의 `OutlinedTextField`가 기본 최소 너비(280dp)와
+ * 창 너비가 맞지 않아 측정이 끝나지 않는(waitForIdle 시간 초과) 문제를 피하려고 고정한다.
+ * 실기기에서 다시 확인해 `fillMaxWidth()`로 바꿀 수 있는지 본다.
+ */
 private val NAME_FIELD_WIDTH = 232.dp
 
 @Composable
@@ -80,13 +82,7 @@ private fun TemplateDialog(dialog: ScheduleDialog.EditTemplate, actions: Schedul
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Md),
             ) {
-                OutlinedTextField(
-    value = title,
-    onValueChange = { title = it },
-    modifier = Modifier.width(NAME_FIELD_WIDTH),
-    label = { Text("이름") },
-    singleLine = true,
-)
+                NameField(title) { title = it }
                 KindPicker(kind) { kind = it }
                 FieldLabel("요일")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Sm)) {
@@ -98,10 +94,7 @@ private fun TemplateDialog(dialog: ScheduleDialog.EditTemplate, actions: Schedul
                         )
                     }
                 }
-                FieldLabel("도착 예정")
-                TimeInput(state = due)
-                FieldLabel("목표 출발")
-                TimeInput(state = depart)
+                TimeFields(due, depart)
             }
         },
         confirmButton = {
@@ -112,8 +105,8 @@ private fun TemplateDialog(dialog: ScheduleDialog.EditTemplate, actions: Schedul
                         title = title,
                         kind = kind,
                         days = days,
-                        due = LocalTime.of(due.hour, due.minute),
-                        depart = LocalTime.of(depart.hour, depart.minute),
+                        due = due.toLocalTime(),
+                        depart = depart.toLocalTime(),
                     ),
                 )
             }) { Text("저장") }
@@ -135,7 +128,7 @@ private fun OneOffDialog(dialog: ScheduleDialog.AddOneOff, today: LocalDate, act
     val initial = dialog.form
     var title by remember(dialog) { mutableStateOf(initial.title) }
     var kind by remember(dialog) { mutableStateOf(initial.kind) }
-    var date by remember(dialog) { mutableStateOf(initial.date) }
+    var date by remember(dialog) { mutableStateOf(maxOf(initial.date, today)) }
     var choosingDate by remember(dialog) { mutableStateOf(false) }
     val due = rememberTimePickerState(initial.due.hour, initial.due.minute, is24Hour = true)
     val depart = rememberTimePickerState(initial.depart.hour, initial.depart.minute, is24Hour = true)
@@ -158,20 +151,11 @@ private fun OneOffDialog(dialog: ScheduleDialog.AddOneOff, today: LocalDate, act
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(ChronoTokens.Space.Md),
                 ) {
-                    OutlinedTextField(
-    value = title,
-    onValueChange = { title = it },
-    modifier = Modifier.width(NAME_FIELD_WIDTH),
-    label = { Text("이름") },
-    singleLine = true,
-)
+                    NameField(title) { title = it }
                     KindPicker(kind) { kind = it }
                     FieldLabel("날짜")
                     TextButton(onClick = { choosingDate = true }) { Text(date.format(SchedulePresenter.DATE)) }
-                    FieldLabel("도착 예정")
-                    TimeInput(state = due)
-                    FieldLabel("목표 출발")
-                    TimeInput(state = depart)
+                    TimeFields(due, depart)
                 }
             },
             confirmButton = {
@@ -182,8 +166,8 @@ private fun OneOffDialog(dialog: ScheduleDialog.AddOneOff, today: LocalDate, act
                             date = date,
                             title = title,
                             kind = kind,
-                            due = LocalTime.of(due.hour, due.minute),
-                            depart = LocalTime.of(depart.hour, depart.minute),
+                            due = due.toLocalTime(),
+                            depart = depart.toLocalTime(),
                         ),
                     )
                 }) { Text("추가") }
@@ -211,16 +195,13 @@ private fun FieldLabel(text: String) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = ChronoTokens.Colors.Text2)
 }
 
-/** 날짜 고르기. 오늘 이전은 고를 수 없다(스펙 D13). DatePicker는 UTC 자정 기준 밀리초를 쓴다. */
+/** 날짜 고르기. 오늘 이전은 고를 수 없다(스펙 D13). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DateChooser(initial: LocalDate, today: LocalDate, onPicked: (LocalDate) -> Unit, onDismiss: () -> Unit) {
     val picker = rememberDatePickerState(
         initialSelectedDateMillis = initial.toUtcMillis(),
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= today.toUtcMillis()
-            override fun isSelectableYear(year: Int): Boolean = year >= today.year
-        },
+        selectableDates = FromToday(today),
     )
     DatePickerDialog(
         onDismissRequest = onDismiss,
@@ -233,6 +214,25 @@ private fun DateChooser(initial: LocalDate, today: LocalDate, onPicked: (LocalDa
     }
 }
 
-private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+@Composable
+private fun NameField(value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        modifier = Modifier.width(NAME_FIELD_WIDTH),
+        label = { Text("이름") },
+        singleLine = true,
+    )
+}
 
-private fun Long.toUtcDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeFields(due: TimePickerState, depart: TimePickerState) {
+    FieldLabel("도착 예정")
+    TimeInput(state = due)
+    FieldLabel("목표 출발")
+    TimeInput(state = depart)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+private fun TimePickerState.toLocalTime(): LocalTime = LocalTime.of(hour, minute)

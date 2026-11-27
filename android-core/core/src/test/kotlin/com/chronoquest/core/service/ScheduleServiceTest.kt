@@ -239,4 +239,26 @@ class ScheduleServiceTest {
         svc.setVacation(d("2026-11-26"), true)
         assertFalse(svc.canMarkMissedVacation(d("2026-11-26")))   // 이미 휴가
     }
+
+    @Test
+    fun `지난 날짜 일정은 시각을 바꿀 수 없다`() = runTest {
+        db.questDao().insertAll(listOf(questEntity("2026-11-26")))
+        val result = service("2026-11-27", "10:00")
+            .reschedule("2026-11-26-WORK-09:00", LocalTime.of(10, 0), LocalTime.of(9, 30))
+        assertEquals(ScheduleResult.Rejected(listOf(ScheduleProblem.PAST_DATE)), result)
+    }
+
+    @Test
+    fun `일정 탭은 오늘부터 7일을 휴가와 함께 보여준다`() = runTest {
+        val svc = service("2026-11-25", "07:00")
+        svc.saveTemplate(weekdayTemplate())
+        svc.setVacation(d("2026-11-27"), true)
+        val days = svc.upcoming()
+        assertEquals(7, days.size)
+        assertEquals(d("2026-11-25"), days.first().date)
+        assertEquals(listOf("2026-11-25-WORK-09:00"), days.first().quests.map { it.quest.id })
+        assertTrue(days[2].vacation)
+        assertTrue(days[3].quests.isEmpty())   // 11/28 토요일
+        assertTrue(days[4].quests.isEmpty())   // 11/29 일요일
+    }
 }

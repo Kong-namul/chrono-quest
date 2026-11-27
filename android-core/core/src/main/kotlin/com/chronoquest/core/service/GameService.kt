@@ -15,6 +15,7 @@ import com.chronoquest.core.domain.RecordPolicy
 import com.chronoquest.core.domain.RecordResult
 import com.chronoquest.core.domain.RejectReason
 import com.chronoquest.core.domain.RepresentativeTitle
+import com.chronoquest.core.domain.TitleChoice
 import com.chronoquest.core.domain.Today
 import com.chronoquest.core.domain.TodaySummary
 import com.chronoquest.rules.engine.Engine
@@ -138,11 +139,18 @@ class GameService(
         db.celebrationDao().markSeen(keys.map { CelebrationSeenEntity(grantKey = it, seenAt = at) })
     }
 
-    /** 홈 "오늘의 퀘스트"용 요약. */
+    /** 홈 "오늘의 퀘스트"용 요약. 오늘이 휴가인지도 같이 준다. */
     suspend fun today(): TodaySummary {
         val now = clock.nowLocal()
         val state = engine.compute(ledgers.loadLedger(), now)
-        return Today.summarize(now.toLocalDate(), state, db.questDao().all(), db.recordDao().all(), db.dayDao().all())
+        return Today.summarize(
+            now.toLocalDate(),
+            state,
+            db.questDao().all(),
+            db.recordDao().all(),
+            db.dayDao().all(),
+            db.vacationDao().all().mapTo(HashSet()) { it.date },
+        )
     }
 
     /** 홈 "정리 필요" 카드 대상. */
@@ -151,17 +159,26 @@ class GameService(
         return CleanupFilter.needsCleanup(engine.compute(ledgers.loadLedger(), now), db.questDao().all(), now)
     }
 
+    /** 홈에 띄우는 대표 칭호 이름. */
+    suspend fun representativeTitle(): String = representative().name
+
     /**
-     * 홈 대표 칭호 이름. 저장된 것이 없거나 더는 갖고 있지 않으면 가장 최근 칭호를 골라 저장하고,
+     * 대표 칭호(ID와 이름). 저장된 것이 없거나 더는 갖고 있지 않으면 가장 최근 칭호를 골라 저장한다.
      * 칭호가 하나도 없으면 저장값을 지운다. 새 칭호를 얻었다고 저절로 바꾸지는 않는다.
+     * 홈이 1분마다 부르므로 먼저 잠금 없이 판단하고, 바꿔야 할 때만 쓰기 잠금 안에서 다시 판단해 저장한다.
      */
-    suspend fun representativeTitle(): String = write { now ->
+    suspend fun representative(): TitleChoice {
         val stored = ledgers.settings().representativeTitleId
-        val choice = RepresentativeTitle.resolve(stored, stateAt(now), catalog)
-        if (choice.titleId != stored) {
-            db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = choice.titleId))
+        val peek = RepresentativeTitle.resolve(stored, state(), catalog)
+        if (peek.titleId == stored) return peek
+        return write { now ->
+            val current = ledgers.settings().representativeTitleId
+            val choice = RepresentativeTitle.resolve(current, stateAt(now), catalog)
+            if (choice.titleId != current) {
+                db.settingsDao().upsert(ledgers.settings().copy(representativeTitleId = choice.titleId))
+            }
+            choice
         }
-        choice.name
     }
 
     /** 칭호 화면의 NEW 표시 대상: 가진 칭호 중 아직 보지 않은 것. */

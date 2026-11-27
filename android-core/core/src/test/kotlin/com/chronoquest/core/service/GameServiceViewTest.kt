@@ -4,6 +4,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.chronoquest.core.clockAt
 import com.chronoquest.core.d
 import com.chronoquest.core.data.ChronoDatabase
+import com.chronoquest.core.data.VacationEntity
+import com.chronoquest.core.domain.TitleChoice
 import com.chronoquest.core.inMemoryDb
 import com.chronoquest.core.questEntity
 import com.chronoquest.rules.engine.GrantType
@@ -116,4 +118,18 @@ class GameServiceViewTest {
     }
 
     private suspend fun storedTitleId(): Int? = db.settingsDao().get()?.representativeTitleId
+
+    @Test
+    fun `오늘이 휴가면 오늘 요약에 표시한다`() = runTest {
+        assertFalse(service("08:00").today().vacation)
+        db.vacationDao().add(VacationEntity(d("2026-11-30")))
+        assertTrue(service("08:00").today().vacation)
+    }
+
+    @Test
+    fun `대표 칭호는 ID와 이름을 같이 준다`() = runTest {
+        assertEquals(TitleChoice(null, "미각성자"), service("08:00").representative())
+        service("08:55").arrive(work.id, safe = true)
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), service("09:00").representative())
+    }
 }

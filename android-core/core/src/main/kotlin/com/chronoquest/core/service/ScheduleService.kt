@@ -11,6 +11,8 @@ import com.chronoquest.core.domain.QuestGenerator
 import com.chronoquest.core.domain.QuestIds
 import com.chronoquest.core.domain.ScheduleProblem
 import com.chronoquest.core.domain.TemplateRules
+import com.chronoquest.core.domain.Upcoming
+import com.chronoquest.core.domain.UpcomingDay
 import com.chronoquest.rules.model.QuestKind
 import java.time.Clock
 import java.time.LocalDate
@@ -30,6 +32,18 @@ class ScheduleService(
     private val ledgers = LedgerRepository(db)
 
     suspend fun templates(): List<ScheduleTemplateEntity> = db.templateDao().all()
+
+    /** 일정 탭에 보여줄 것. 오늘부터 [days]일의 일정과 휴가다. */
+    suspend fun upcoming(days: Int = QuestGenerator.HORIZON_DAYS): List<UpcomingDay> = db.withTransaction {
+        Upcoming.build(
+            from = clock.today(),
+            days = days,
+            quests = db.questDao().all(),
+            records = db.recordDao().all(),
+            dayRecords = db.dayDao().all(),
+            vacations = db.vacationDao().all().mapTo(HashSet()) { it.date },
+        )
+    }
 
     /** 템플릿을 저장하고, 그 템플릿의 기록 없는 미래 일정을 새 내용으로 다시 만든다. */
     suspend fun saveTemplate(template: ScheduleTemplateEntity): ScheduleResult {
@@ -103,13 +117,16 @@ class ScheduleService(
     }
 
     /**
-     * 일정 하나의 예정·목표 출발 시각을 바꾼다(이른 기록 확인 뒤 "일정 변경"). 기록이 있으면 바꿀 수 없다.
+     * 일정 하나의 예정·목표 출발 시각을 바꾼다(이른 기록 확인 뒤 "일정 변경"). 기록이 있으면 바꿀 수 없다. 지난 날짜 일정도 바꿀 수 없다.
      * ID가 예정 시각을 담으므로 옛 일정을 지우고 새 ID로 다시 넣는다. 나머지 필드는 그대로다.
      */
     suspend fun reschedule(questId: String, dueTime: LocalTime, targetDepartTime: LocalTime): ScheduleResult =
         db.withTransaction {
             val quest = db.questDao().get(questId)
                 ?: return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.NOT_FOUND))
+            if (quest.date.isBefore(clock.today())) {
+                return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.PAST_DATE))
+            }
             if (db.recordDao().get(questId) != null) {
                 return@withTransaction ScheduleResult.Rejected(listOf(ScheduleProblem.HAS_RECORD))
             }

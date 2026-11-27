@@ -117,8 +117,6 @@ class GameServiceViewTest {
         assertEquals(listOf("title:1:1", "title:21:1"), svc.unseenCelebrations().map { it.key })
     }
 
-    private suspend fun storedTitleId(): Int? = db.settingsDao().get()?.representativeTitleId
-
     @Test
     fun `오늘이 휴가면 오늘 요약에 표시한다`() = runTest {
         assertFalse(service("08:00").today().vacation)
@@ -132,4 +130,19 @@ class GameServiceViewTest {
         service("08:55").arrive(work.id, safe = true)
         assertEquals(TitleChoice(21, "운명의 첫걸음"), service("09:00").representative())
     }
+
+    @Test
+    fun `대표 칭호가 맞으면 그대로 두고 갖지 않은 칭호면 최근 칭호로 한 번 고친다`() = runTest {
+        service("08:55").arrive(work.id, safe = true)
+        val svc = service("09:00")
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
+        db.settingsDao().upsert(db.settingsDao().get()!!.copy(representativeTitleId = 61))
+        assertEquals(TitleChoice(21, "운명의 첫걸음"), svc.representative())
+        assertEquals(21, storedTitleId())
+    }
+
+    private suspend fun storedTitleId(): Int? = db.settingsDao().get()?.representativeTitleId
 }

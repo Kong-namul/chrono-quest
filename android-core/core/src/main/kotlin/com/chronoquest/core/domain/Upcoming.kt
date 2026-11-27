@@ -16,7 +16,7 @@ data class UpcomingDay(
     val quests: List<UpcomingQuest>,
 )
 
-/** 오늘부터 [build]의 days일 동안 일정을 날짜별로 묶는다. 일정이 없는 날도 넣는다(휴가 지정용). */
+/** [build]의 from부터 days일 동안 일정을 날짜별로 묶는다. 일정이 없는 날도 넣는다(휴가 지정용). */
 object Upcoming {
     fun build(
         from: LocalDate,

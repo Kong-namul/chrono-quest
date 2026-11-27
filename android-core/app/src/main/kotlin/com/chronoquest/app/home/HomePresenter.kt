@@ -67,7 +67,7 @@ class HomePresenter(
                     pet = CompanionCards.pet(gameState.pet, gameState.xp),
                     boss = CompanionCards.boss(gameState.boss),
                     quests = today.quests.map { q -> toCard(q, today.vacation) },
-                    cleanup = cleanup.map { q -> toCleanup(q, canBeVacation = q.date in vacationDates) },
+                    cleanup = cleanup.map { q -> toCleanup(q, canBeVacation = q.kind == QuestKind.WORK && q.date in vacationDates) },
                     celebrations = celebrations,
                     dialog = if (askSelfControl && it.dialog == null) HomeDialog.AskSelfControl(today.date) else it.dialog,
                 )

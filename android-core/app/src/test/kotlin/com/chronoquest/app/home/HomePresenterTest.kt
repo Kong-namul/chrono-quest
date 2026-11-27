@@ -308,4 +308,16 @@ class HomePresenterTest {
         presenter.onCleanupVacation(thuWork.id)
         assertNull(state.dialog)
     }
+
+    @Test
+    fun `휴가였어는 출근 정리 카드에만 보여준다`() = runTest {
+        val friWork = questEntity("2026-11-27")
+        val friOther = questEntity("2026-11-27", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
+        db.questDao().insertAll(listOf(friWork, friOther))
+        presenter.refresh()
+        assertTrue(state.cleanup.single { it.id == friWork.id }.canBeVacation)
+        assertFalse(state.cleanup.single { it.id == friOther.id }.canBeVacation)
+        presenter.onCleanupVacation(friOther.id)
+        assertNull(state.dialog)
+    }
 }

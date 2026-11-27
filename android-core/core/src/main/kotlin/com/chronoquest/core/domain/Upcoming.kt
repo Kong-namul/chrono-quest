@@ -3,16 +3,19 @@ package com.chronoquest.core.domain
 import com.chronoquest.core.data.DayRecordEntity
 import com.chronoquest.core.data.QuestEntity
 import com.chronoquest.core.data.QuestRecordEntity
+import com.chronoquest.rules.model.QuestKind
 import java.time.LocalDate
 
 /** 일정 탭 "다가오는 일정"의 한 줄. */
 data class UpcomingQuest(val quest: QuestEntity, val hasRecord: Boolean)
 
-/** 일정 탭의 하루. [hasActivity]면 그날은 휴가로 바꿀 수 없다(스펙 D13). */
+/** 일정 탭의 하루. 오늘과 그 뒤 날짜는 [hasActivity]가 아니라 [hasWorkRecord]가 휴가로 바꾸는 것을 막는다(스펙 D13). */
 data class UpcomingDay(
     val date: LocalDate,
     val vacation: Boolean,
     val hasActivity: Boolean,
+    /** 그날 출근 일정에 기록이 있다. 휴가는 출근 판정만 빼므로 이것만 켜기를 막는다. */
+    val hasWorkRecord: Boolean,
     val quests: List<UpcomingQuest>,
 )
 
@@ -38,6 +41,7 @@ object Upcoming {
                 date = date,
                 vacation = date in vacations,
                 hasActivity = DayActivity.hasDayRecord(dayByDate[date]) || items.any { it.hasRecord },
+                hasWorkRecord = items.any { it.quest.kind == QuestKind.WORK && it.hasRecord },
                 quests = items,
             )
         }

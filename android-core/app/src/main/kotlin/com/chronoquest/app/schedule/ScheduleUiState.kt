@@ -24,7 +24,7 @@ data class UpcomingQuestRow(
     val canRestore: Boolean,
 )
 
-/** 다가오는 하루. 그날 기록이 있으면 휴가로 켤 수 없다(이미 휴가면 끌 수는 있다). */
+/** 다가오는 하루. 그날 출근 일정에 기록이 있으면 휴가로 켤 수 없다(이미 휴가면 끌 수는 있다). */
 data class UpcomingDayRow(
     val date: LocalDate,
     val dateLabel: String,

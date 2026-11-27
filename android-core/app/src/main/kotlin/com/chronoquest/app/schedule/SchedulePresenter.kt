@@ -224,7 +224,7 @@ class SchedulePresenter(
             else -> ""
         } + day.date.format(DATE),
         vacation = day.vacation,
-        canToggleVacation = day.vacation || !day.hasActivity,
+        canToggleVacation = day.vacation || !day.hasWorkRecord,
         quests = day.quests.map { item ->
             val canceled = item.quest.status == QuestStatus.CANCELED
             UpcomingQuestRow(

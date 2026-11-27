@@ -52,9 +52,9 @@ class HomePresenter(
             schedule.generateQuests()
             val today = game.today()
             val gameState = game.state()
-            val cleanup = game.needsCleanup()
+            val cleanup = game.cleanupQuests()
             // 정리 필요한 지난 출근 중 그날 활동이 전혀 없는 날만 [휴가였어]를 보여준다(스펙 D13).
-            val vacationDates = cleanup.filter { it.kind == QuestKind.WORK }.map { it.date }.distinct()
+            val vacationDates = cleanup.map { it.quest }.filter { it.kind == QuestKind.WORK }.map { it.date }.distinct()
                 .filterTo(HashSet()) { schedule.canMarkMissedVacation(it) }
             val title = game.representativeTitle()
             val celebrations = game.unseenCelebrations()
@@ -71,7 +71,10 @@ class HomePresenter(
                     pet = CompanionCards.pet(gameState.pet, gameState.xp),
                     boss = CompanionCards.boss(gameState.boss),
                     quests = today.quests.map { q -> toCard(q, today.vacation) },
-                    cleanup = cleanup.map { q -> toCleanup(q, canBeVacation = q.kind == QuestKind.WORK && q.date in vacationDates) },
+                    cleanup = cleanup.map { item ->
+                        val q = item.quest
+                        toCleanup(q, canBeVacation = q.kind == QuestKind.WORK && q.date in vacationDates, canCancel = !item.hasRecord)
+                    },
                     celebrations = celebrations,
                     dialog = when {
                         askSelfControl && it.dialog == null -> selfControlDialog
@@ -290,13 +293,14 @@ class HomePresenter(
         )
     }
 
-    private fun toCleanup(quest: QuestEntity, canBeVacation: Boolean) = CleanupCard(
+    private fun toCleanup(quest: QuestEntity, canBeVacation: Boolean, canCancel: Boolean) = CleanupCard(
         id = quest.id,
         title = quest.title,
         whenLabel = quest.dueAt.format(CLEANUP_WHEN),
         date = quest.date,
         due = quest.dueAt.toLocalTime(),
         canBeVacation = canBeVacation,
+        canCancel = canCancel,
     )
 
     private companion object {

@@ -300,6 +300,19 @@ class HomePresenterTest {
     }
 
     @Test
+    fun `출발만 하고 도착을 못 남긴 정리 카드는 취소할 수 없다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.onSelfControlAnswered(d("2026-11-30"), true)
+        val friday = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(friday))
+        clock.now = dt("2026-11-30", "12:30")
+        presenter.refresh()
+        assertFalse(state.cleanup.single { it.id == work.id }.canCancel)
+        assertTrue(state.cleanup.single { it.id == friday.id }.canCancel)
+    }
+
+    @Test
     fun `그날 기록이 있으면 휴가였는지 묻지 않는다`() = runTest {
         val thuWork = questEntity("2026-11-26")
         val thuOther = questEntity("2026-11-26", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")

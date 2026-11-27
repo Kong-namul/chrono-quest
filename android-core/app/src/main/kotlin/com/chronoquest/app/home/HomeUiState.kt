@@ -26,6 +26,8 @@ data class CleanupCard(
     val due: LocalTime,
     /** 그날 활동이 전혀 없는 지난 출근이면 [휴가였어]를 보여준다(스펙 D13). */
     val canBeVacation: Boolean = false,
+    /** 기록이 있으면 취소할 수 없어 [취소]를 숨긴다(스펙 D13). */
+    val canCancel: Boolean = true,
 )
 
 /** 홈 펫 카드. 지금은 글자만 보여주고, 그림은 Phase B(Unity)에서 붙인다(스펙 D14). */

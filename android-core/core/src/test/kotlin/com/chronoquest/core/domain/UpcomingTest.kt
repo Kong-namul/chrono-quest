@@ -33,11 +33,27 @@ class UpcomingTest {
         assertEquals(listOf(work.id, other.id), days[0].quests.map { it.quest.id })
         assertEquals(listOf(true, false), days[0].quests.map { it.hasRecord })
         assertTrue(days[0].hasActivity)
+        assertTrue(days[0].hasWorkRecord)
         assertFalse(days[0].vacation)
         assertTrue(days[1].vacation)
         assertFalse(days[1].hasActivity)
+        assertFalse(days[1].hasWorkRecord)
         assertTrue(days[6].quests.isEmpty())
         assertTrue(days.none { day -> day.quests.any { it.quest.id == old.id } })
+    }
+
+    @Test
+    fun `출근 기록은 없고 다른 일정 기록만 있으면 활동은 있어도 출근 기록은 없다`() {
+        val days = Upcoming.build(
+            from = d("2026-11-30"),
+            days = 1,
+            quests = listOf(work, other),
+            records = listOf(QuestRecordEntity(questId = other.id, arrivedAt = dt("2026-11-30", "18:55"), safe = true)),
+            dayRecords = emptyList(),
+            vacations = emptySet(),
+        )
+        assertTrue(days.single().hasActivity)
+        assertFalse(days.single().hasWorkRecord)
     }
 
     @Test

@@ -153,15 +153,19 @@ class ScheduleService(
 
     /**
      * 휴가 켜기·끄기 (스펙 6.4, D13).
-     * - 오늘과 그 뒤 날짜는 켜고 끌 수 있다. 단, 그날 기록이 있으면 켤 수 없다(그날 출근 XP가 빠지므로).
+     * - 오늘과 그 뒤 날짜는 켜고 끌 수 있다. 단, 그날 출근 일정에 기록이 있으면 켤 수 없다(휴가는 출근 판정만 빼므로 다른 일정·하루 기록은 막지 않는다).
+     * - 이미 휴가인 날을 다시 켜는 것은 확인 없이 저장한다.
      * - 지난 날짜는 그날 활동이 전혀 없을 때만 켤 수 있다(깜빡한 휴가). 끌 수는 없다.
      * - 시즌 시작 전 날짜는 안 된다.
      */
     suspend fun setVacation(date: LocalDate, on: Boolean): ScheduleResult = db.withTransaction {
+        val past = date.isBefore(clock.today())
         val problem = when {
             date.isBefore(ledgers.settings().seasonStart) -> ScheduleProblem.BEFORE_SEASON
-            !on && date.isBefore(clock.today()) -> ScheduleProblem.PAST_DATE
-            on && hasActivity(date) -> ScheduleProblem.DAY_HAS_RECORD
+            !on && past -> ScheduleProblem.PAST_DATE
+            on && db.vacationDao().isVacation(date) -> null
+            on && past && hasActivity(date) -> ScheduleProblem.DAY_HAS_RECORD
+            on && !past && hasWorkRecord(date) -> ScheduleProblem.DAY_HAS_RECORD
             else -> null
         }
         if (problem != null) return@withTransaction ScheduleResult.Rejected(listOf(problem))
@@ -181,6 +185,10 @@ class ScheduleService(
     private suspend fun hasActivity(date: LocalDate): Boolean =
         DayActivity.hasDayRecord(db.dayDao().get(date)) ||
             db.questDao().onDate(date).any { DayActivity.hasRecord(db.recordDao().get(it.id)) }
+
+    /** 그날 출근 일정에 기록이 하나라도 있는지 본다. 오늘 이후 휴가는 이것만 막는다. */
+    private suspend fun hasWorkRecord(date: LocalDate): Boolean =
+        db.questDao().onDate(date).any { it.kind == QuestKind.WORK && DayActivity.hasRecord(db.recordDao().get(it.id)) }
 
     private suspend fun dropFutureUnrecorded(templateId: Long) {
         val ids = db.questDao().unrecordedFutureIds(templateId, clock.nowLocal())

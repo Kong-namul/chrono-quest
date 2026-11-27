@@ -228,6 +228,19 @@ class ScheduleServiceTest {
     }
 
     @Test
+    fun `오늘 이후는 출근 기록만 휴가를 막는다`() = runTest {
+        val svc = service("2026-11-27", "10:00")
+        val meeting = questEntity("2026-11-27", kind = QuestKind.OTHER, due = "08:00", depart = "07:30", title = "약속")
+        db.questDao().insertAll(listOf(questEntity("2026-11-27"), meeting))
+        db.recordDao().upsert(QuestRecordEntity(questId = meeting.id, arrivedAt = dt("2026-11-27", "07:55"), safe = true))
+        assertEquals(ScheduleResult.Saved("2026-11-27"), svc.setVacation(d("2026-11-27"), true))
+        db.dayDao().upsert(DayRecordEntity(date = d("2026-11-28"), selfControl = true))
+        assertEquals(ScheduleResult.Saved("2026-11-28"), svc.setVacation(d("2026-11-28"), true))
+        // 이미 휴가인 날을 다시 켜는 것은 그대로 둔다.
+        assertEquals(ScheduleResult.Saved("2026-11-28"), svc.setVacation(d("2026-11-28"), true))
+    }
+
+    @Test
     fun `깜빡한 휴가는 활동이 전혀 없는 지난 날만 묻는다`() = runTest {
         val svc = service("2026-11-28", "10:00")
         db.questDao().insertAll(listOf(questEntity("2026-11-26"), questEntity("2026-11-27"), questEntity("2026-11-28")))

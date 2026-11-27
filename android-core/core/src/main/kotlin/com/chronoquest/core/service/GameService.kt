@@ -10,6 +10,7 @@ import com.chronoquest.core.data.RecordSource
 import com.chronoquest.core.domain.Celebration
 import com.chronoquest.core.domain.Celebrations
 import com.chronoquest.core.domain.CleanupFilter
+import com.chronoquest.core.domain.CleanupQuest
 import com.chronoquest.core.domain.DayActivity
 import com.chronoquest.core.domain.RecordPolicy
 import com.chronoquest.core.domain.RecordResult
@@ -158,6 +159,10 @@ class GameService(
         val now = clock.nowLocal()
         return CleanupFilter.needsCleanup(engine.compute(ledgers.loadLedger(), now), db.questDao().all(), now)
     }
+
+    /** 홈 "정리 필요" 카드 대상을 기록 여부와 함께 준다. 기록이 있으면 [취소]를 못 하므로(스펙 D13) 화면이 버튼을 숨긴다. */
+    suspend fun cleanupQuests(): List<CleanupQuest> =
+        db.withTransaction { needsCleanup().map { CleanupQuest(it, DayActivity.hasRecord(db.recordDao().get(it.id))) } }
 
     /** 홈에 띄우는 대표 칭호 이름. */
     suspend fun representativeTitle(): String = representative().name

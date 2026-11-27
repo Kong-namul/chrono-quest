@@ -213,7 +213,9 @@ private fun CleanupRow(card: CleanupCard, actions: HomeActions) {
         FlowRow {
             TextButton(onClick = { actions.onCleanupAddArrival(card.id) }) { Text("기록 추가") }
             TextButton(onClick = { actions.onCleanupLate(card.id) }) { Text("지각 처리") }
-            TextButton(onClick = { actions.onCleanupCancel(card.id) }) { Text("취소") }
+            if (card.canCancel) {
+                TextButton(onClick = { actions.onCleanupCancel(card.id) }) { Text("취소") }
+            }
             if (card.canBeVacation) {
                 TextButton(onClick = { actions.onCleanupVacation(card.id) }) { Text("휴가였어") }
             }

@@ -58,6 +58,17 @@ class GameServiceViewTest {
     }
 
     @Test
+    fun `정리 필요 목록은 기록 여부를 함께 준다`() = runTest {
+        val old = questEntity("2026-11-27")
+        db.questDao().insertAll(listOf(old))
+        service("08:25").depart(work.id)
+        val cleanup = service("12:30").cleanupQuests()
+        assertEquals(listOf(old, work), cleanup.map { it.quest })
+        assertFalse(cleanup.single { it.quest.id == old.id }.hasRecord)
+        assertTrue(cleanup.single { it.quest.id == work.id }.hasRecord)
+    }
+
+    @Test
     fun `대표 칭호는 가진 칭호만 고를 수 있고 사라지면 최근 칭호로 돌아간다`() = runTest {
         assertEquals("미각성자", service("08:00").representativeTitle())
         service("08:55").arrive(work.id, safe = true)

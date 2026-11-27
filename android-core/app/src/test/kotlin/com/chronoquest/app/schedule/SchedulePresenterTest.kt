@@ -10,6 +10,7 @@ import com.chronoquest.core.data.ChronoDatabase
 import com.chronoquest.core.data.ScheduleTemplateEntity
 import com.chronoquest.core.domain.TemplateRules
 import com.chronoquest.core.service.GameService
+import com.chronoquest.core.service.ScheduleResult
 import com.chronoquest.core.service.ScheduleService
 import com.chronoquest.rules.model.QuestKind
 import java.time.DayOfWeek
@@ -173,6 +174,18 @@ class SchedulePresenterTest {
         presenter.dismissMessage()
         presenter.onVacationToggled(d("2026-11-30"), true)
         assertEquals("그날 기록이 있어서 휴가로 바꿀 수 없어.", state.message)
+    }
+
+    @Test
+    fun `다른 일정 기록만 있는 오늘은 휴가로 바꿀 수 있다`() = runTest {
+        val meeting = ScheduleService(db, clock)
+            .addOneOffQuest(d("2026-11-30"), QuestKind.OTHER, "약속", LocalTime.of(7, 50), LocalTime.of(7, 20))
+        val id = (meeting as ScheduleResult.Saved).id
+        GameService(db, clock).arrive(id, safe = true)
+        presenter.refresh()
+        assertTrue(state.days[0].canToggleVacation)
+        presenter.onVacationToggled(d("2026-11-30"), true)
+        assertTrue(state.days[0].vacation)
     }
 
     @Test

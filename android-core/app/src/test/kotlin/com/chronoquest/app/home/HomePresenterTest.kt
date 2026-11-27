@@ -21,6 +21,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -33,6 +35,7 @@ class HomePresenterTest {
     private lateinit var presenter: HomePresenter
     private val clock = MutableClock(dt("2026-11-30", "08:00"))
     private val notified = mutableListOf<Pair<Int, List<Celebration>>>()
+    private val notifier = SettlementNotifier { xp, celebrations -> notified += xp to celebrations }
     private val work = questEntity("2026-11-30")
     private val other = questEntity("2026-11-30", kind = QuestKind.OTHER, due = "19:00", depart = "18:30", title = "약속")
 
@@ -40,7 +43,6 @@ class HomePresenterTest {
     fun setUp() = runTest {
         db = inMemoryDb()
         db.questDao().insertAll(listOf(other, work))
-        val notifier = SettlementNotifier { xp, celebrations -> notified += xp to celebrations }
         presenter = HomePresenter({ GameService(db, clock) }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
     }
 
@@ -180,7 +182,7 @@ class HomePresenterTest {
         clock.now = dt("2026-11-30", "08:55")
         presenter.onSafetyAnswered(work.id, true)
         assertEquals(listOf("title:1:1", "title:21:1"), state.celebrations.map { it.key })
-        presenter.onCelebrationsSeen()
+        presenter.onCelebrationsSeen(state.celebrations.map { it.key })
         assertTrue(state.celebrations.isEmpty())
         presenter.refresh()
         assertTrue(state.celebrations.isEmpty())
@@ -319,5 +321,64 @@ class HomePresenterTest {
         assertFalse(state.cleanup.single { it.id == friOther.id }.canBeVacation)
         presenter.onCleanupVacation(friOther.id)
         assertNull(state.dialog)
+    }
+
+    @Test
+    fun `동작이 끝나기 전에 다시 누른 것은 무시한다`() = runTest {
+        // compute를 테스트 디스패처로 두면 첫 동작이 문(gate)을 잡은 채 멈춘 사이에 두 번째 동작이 들어온다.
+        val gated = HomePresenter(
+            { GameService(db, clock) },
+            { ScheduleService(db, clock) },
+            notifier,
+            StandardTestDispatcher(testScheduler),
+        )
+        clock.now = dt("2026-11-30", "08:25")
+        val first = launch { gated.onDepart(work.id) }
+        val second = launch { gated.onDepart(work.id) }
+        first.join()
+        second.join()
+        assertNull(gated.state.value.message)
+        assertEquals(1, notified.size)
+    }
+
+    @Test
+    fun `새로고침이 실패하면 로딩을 풀고 알려준다`() = runTest {
+        val broken = HomePresenter({ error("DB 고장") }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
+        val failure = runCatching { broken.refresh() }.exceptionOrNull()
+        broken.onFailure(failure!!)
+        assertFalse(broken.state.value.loading)
+        assertEquals("문제가 생겼어. 잠시 뒤에 다시 해줘.", broken.state.value.message)
+    }
+
+    @Test
+    fun `연출 확인은 화면에 보인 것만 본 것으로 한다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        presenter.dismissDialog()
+        val shown = state.celebrations.map { it.key }
+        clock.now = dt("2026-11-30", "08:55")
+        presenter.onSafetyAnswered(work.id, true)
+        presenter.onCelebrationsSeen(shown)
+        assertEquals(listOf("title:1:1", "title:21:1"), state.celebrations.map { it.key })
+    }
+
+    @Test
+    fun `다른 곳에서 행동통제를 답했으면 새로고침 때 질문 창을 닫는다`() = runTest {
+        clock.now = dt("2026-11-30", "08:25")
+        presenter.onDepart(work.id)
+        assertEquals(HomeDialog.AskSelfControl(d("2026-11-30")), state.dialog)
+        GameService(db, clock).answerSelfControl(d("2026-11-30"), true)
+        presenter.refresh()
+        assertNull(state.dialog)
+    }
+
+    @Test
+    fun `서비스는 처음 새로고침할 때 한 번만 만든다`() = runTest {
+        var made = 0
+        val lazyPresenter = HomePresenter({ made++; GameService(db, clock) }, { ScheduleService(db, clock) }, notifier, Dispatchers.Unconfined)
+        assertEquals(0, made)
+        lazyPresenter.refresh()
+        lazyPresenter.refresh()
+        assertEquals(1, made)
     }
 }

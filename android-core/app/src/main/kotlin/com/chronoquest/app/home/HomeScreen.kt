@@ -33,6 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.chronoquest.app.ui.Chip
+import com.chronoquest.app.ui.LoadingText
+import com.chronoquest.app.ui.MessageDialog
 import com.chronoquest.app.ui.theme.ChronoTokens
 import com.chronoquest.app.ui.theme.onTierColor
 import com.chronoquest.app.ui.theme.tierColor
@@ -63,11 +66,15 @@ data class HomeActions(
     val onVacationConfirmed: (HomeDialog.ConfirmVacation) -> Unit = {},
     val onDismissDialog: () -> Unit = {},
     val onDismissMessage: () -> Unit = {},
-    val onCelebrationsSeen: () -> Unit = {},
+    val onCelebrationsSeen: (List<String>) -> Unit = {},
 )
 
 @Composable
 fun HomeScreen(state: HomeUiState, actions: HomeActions, modifier: Modifier = Modifier) {
+    if (state.loading) {
+        LoadingText(modifier)
+        return
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize().background(ChronoTokens.Colors.Bg1),
         contentPadding = PaddingValues(horizontal = ChronoTokens.Space.Lg, vertical = ChronoTokens.Space.Xl),
@@ -76,7 +83,7 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions, modifier: Modifier = Mo
         item { Header(state) }
         item { CompanionRow(state.pet, state.boss) }
         if (state.celebrations.isNotEmpty()) {
-            item { CelebrationCard(state.celebrations, actions.onCelebrationsSeen) }
+            item { CelebrationCard(state.celebrations) { actions.onCelebrationsSeen(state.celebrations.map { it.key }) } }
         }
         if (state.cleanup.isNotEmpty()) {
             item { SectionTitle("정리 필요") }
@@ -190,16 +197,6 @@ private fun StatusChip(status: CardStatus) {
         CardStatus.VACATION -> Triple("휴가", ChronoTokens.Colors.Bg2, ChronoTokens.Colors.Text2)
     }
     Chip(label, background, foreground)
-}
-
-@Composable
-private fun Chip(label: String, background: Color, foreground: Color) {
-    Text(
-        label,
-        modifier = Modifier.background(background, RoundedCornerShape(ChronoTokens.Radius.Sm)).padding(horizontal = ChronoTokens.Space.Md, vertical = ChronoTokens.Space.Xs),
-        style = MaterialTheme.typography.labelLarge,
-        color = foreground,
-    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

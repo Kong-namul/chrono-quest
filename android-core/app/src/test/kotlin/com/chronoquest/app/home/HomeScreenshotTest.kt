@@ -121,4 +121,7 @@ class HomeScreenshotTest {
 
     @Test
     fun `휴가였는지 묻는 창`() = shoot("home_confirm_vacation", Samples.confirmVacation)
+
+    @Test
+    fun `불러오는 중`() = shoot("home_loading", HomeUiState())
 }

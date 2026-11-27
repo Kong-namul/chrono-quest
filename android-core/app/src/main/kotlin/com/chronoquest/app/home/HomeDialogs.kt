@@ -111,12 +111,3 @@ private fun AddArrivalDialog(dialog: HomeDialog.AddArrival, actions: HomeActions
         },
     )
 }
-
-@Composable
-fun MessageDialog(message: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        text = { Text(message) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("확인") } },
-    )
-}

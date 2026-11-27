@@ -6,6 +6,7 @@ import com.chronoquest.core.domain.ScheduleProblem
 /** 화면 공통 안내 문구(반말). 거부 사유와 일정 문제를 사람이 읽는 말로 바꾼다. */
 object Messages {
     const val NOT_FOUND = "일정을 찾을 수 없어."
+    const val FAILURE = "문제가 생겼어. 잠시 뒤에 다시 해줘."
 
     fun reject(reason: RejectReason): String = when (reason) {
         RejectReason.QUEST_CANCELED -> "취소한 일정이야."
